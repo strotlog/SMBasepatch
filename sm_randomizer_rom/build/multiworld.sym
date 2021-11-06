@@ -29,6 +29,7 @@ B8:81D9 :pos_1_5
 84:FF2B SOUNDFX
 84:FF36 SPECIALFX
 84:F87E c_item
+CE:FF04 config_deathlink
 CE:FF00 config_flags
 CE:FF00 config_multiworld
 CE:FF02 config_sprite
@@ -127,7 +128,7 @@ B8:800F write_message
 0005 5254c1e9 ../src/items.asm
 
 [rom checksum]
-a48cdcd8
+e12b56bb
 
 [addr-to-line mapping]
 ff:ffff 0000:00000001
