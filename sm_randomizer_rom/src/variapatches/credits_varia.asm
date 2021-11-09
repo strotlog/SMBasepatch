@@ -294,27 +294,6 @@ save_index:
 .end:
     rtl
 
-update_checksum:
-    rep #$30
-    clc
-    lda #$0000
-    ldx #$0000
--
-    adc $700010, x
-    bcc +
-    dec
-+   
-    inx
-    inx
-    cpx #$065C
-    bne -
-    sta $700000
-    sta $701FF0
-    eor #$FFFF
-    sta $700008
-    sta $701FF8
-    rtl
-
 warnpc $80ffbf
 
 
@@ -347,6 +326,8 @@ opt_backup:
 // put that here to have it at a fixed location (will be called from new_game)
 print "new_save: ", org
 new_save:
+    ldx #$0000
+    jsl start_item
 	// call save routine
 	lda {current_save_slot}
 	jsl $818000
@@ -380,8 +361,6 @@ new_save:
 	lda #$8000
 	sta $700002,x
 .end:
-    ldx #$0000
-    jsl start_item
 	rtl
 
 // save slot data:
@@ -1452,7 +1431,7 @@ dec_stat:
     plx
     rtl
 
-update_graphic_checksum:
+update_graphic:
     cmp #$0000
     beq +
     lda #$0001
@@ -1469,7 +1448,6 @@ update_graphic_checksum:
     jsl $809A3E   // thanks PierRoulette
 +
     jsl $90AC8D   // thanks PierRoulette
-    jsl update_checksum
     rts
 
 warnpc $dfd87f
@@ -1509,7 +1487,6 @@ start_item:
 -
     lda start_item_data_major, x
     sta $7E09A2, x
-    sta $700010, x
     inx 
     inx
     cpx #$0008
@@ -1518,7 +1495,6 @@ start_item:
 -
     lda start_item_data_minor, x
     sta $7E09C2, x
-    sta $700030, x
     inx
     inx
     cpx #$0010
@@ -1527,12 +1503,11 @@ start_item:
 -
     lda start_item_data_reserve, x
     sta $7E09D4, x
-    sta $700042, x
     inx
     inx
     cpx #$0004
     bne -
-    jsr update_graphic_checksum
+    jsr update_graphic
     rtl
 
 warnpc $dfd91a

@@ -120,7 +120,7 @@ B8:803B write_long_message
 B8:800F write_message
 
 [source files]
-0000 6420c3b5 ../src/main.asm
+0000 71ef86a8 ../src/main.asm
 0001 1bb7e8db ../src/randopatches/nofanfare.asm
 0002 2c0ca3dc ../src/common.asm
 0003 cefbda40 ../src/randolive.asm
