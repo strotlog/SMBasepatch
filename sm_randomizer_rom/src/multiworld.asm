@@ -336,7 +336,20 @@ write_placeholders:
     bne -
 
     lda $c3                 ; Load player 1
-    asl #4 : tax
+    ldx #$0000
+.loop
+    cpx #$0190              ; 200 entries
+    beq .notfound
+    inx #2   
+    cmp rando_player_id_table-$2, x
+    bne .loop
+    dex #2
+    txa
+    bra .value_ok
+.notfound   
+    lda #$0000
+.value_ok
+    asl #3 : tax
     ldy #$0000
 -
     lda.l rando_player_table, x
