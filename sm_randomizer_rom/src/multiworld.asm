@@ -125,7 +125,21 @@ mw_handle_queue:
 
     asl #2 : tax
     lda.l !SRAM_MW_ITEMS_RECV, x : sta $c3
-    lda.l !SRAM_MW_ITEMS_RECV+$2, x : sta $c1
+    lda.l !SRAM_MW_ITEMS_RECV+$2, x
+    pha
+    phx
+    and #$FF00
+    lsr #8
+    
+    jsl $84f830
+    lda $7ed870, X
+    ora $7e05e7
+    sta $7ed870, X
+
+    plx
+    pla 
+    and #$00FF
+    sta $c1
     jsr mw_receive_item
 
     lda.l !SRAM_MW_ITEMS_RECV_RPTR

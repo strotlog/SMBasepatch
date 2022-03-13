@@ -71,10 +71,10 @@ sm_item_graphics:
 
 sm_item_table:
     ; pickup, qty,   msg,   type,  ext2,  ext3,  loop,  hloop
-    dw $8968, $0064, $0000, $0000, $0000, $0000, $E0A5, #p_etank_hloop      ; E-Tank
-    dw $89A9, $0005, $0000, $0001, $0000, $0000, $E0CA, #p_missile_hloop    ; Missiles
-    dw $89D2, $0005, $0000, $0002, $0000, $0000, $E0EF, #p_super_hloop      ; Super Missiles
-    dw $89FB, $0005, $0000, $0003, $0000, $0000, $E114, #p_pb_hloop         ; Power Bombs
+    dw $8968, $0064, $0000, $0000, $0000, $0000, #p_etank_loop, #p_etank_hloop     ; E-Tank
+    dw $89A9, $0005, $0000, $0001, $0000, $0000, #p_missile_loop, #p_missile_hloop ; Missiles
+    dw $89D2, $0005, $0000, $0002, $0000, $0000, #p_super_loop, #p_super_hloop     ; Super Missiles
+    dw $89FB, $0005, $0000, $0003, $0000, $0000, #p_pb_loop, #p_pb_hloop           ; Power Bombs
         
     dw $88F3, $1000, $0013, $0004, $0000, $0000, $0000, $0000      ; Bombs
     dw $88B0, $1000, $000E, $0005, $0000, $0000, $0000, $0000      ; Charge beam
@@ -111,6 +111,30 @@ i_hidden_item:
     jsr i_load_rando_item
     rts
 
+p_etank_loop:
+    dw $0004, $a2df
+    dw $0004, $a2e5
+    dw !IBranchItem, p_visible_item_end
+    dw !IGoto, p_etank_loop
+
+p_missile_loop:
+    dw $0004, $A2EB
+    dw $0004, $A2F1
+    dw !IBranchItem, p_visible_item_end
+    dw !IGoto, p_missile_loop
+
+p_super_loop:
+    dw $0004, $A2F7
+    dw $0004, $A2FD
+    dw !IBranchItem, p_visible_item_end
+    dw !IGoto, p_super_loop
+
+p_pb_loop:
+    dw $0004, $A303
+    dw $0004, $A309
+    dw !IBranchItem, p_visible_item_end
+    dw !IGoto, p_pb_loop
+
 p_etank_hloop:
     dw $0004, $a2df
     dw $0004, $a2e5
@@ -146,6 +170,7 @@ p_visible_item:
     dw !ISetPreInstructionCode, $df89
     dw !IStartDrawLoop
     .loop
+    dw !IBranchItem, .end
     dw !IDrawCustom1
     dw !IDrawCustom2
     dw !IGoto, .loop
@@ -166,6 +191,7 @@ p_chozo_item:
     dw !ISetCounter8 : db $16
     dw !IStartDrawLoop
     .loop
+    dw !IBranchItem, .end
     dw !IDrawCustom1
     dw !IDrawCustom2
     dw !IGoto, .loop
@@ -187,6 +213,7 @@ p_hidden_item:
     dw !ISetCounter8 : db $16
     dw !IStartHiddenDrawLoop
     .loop
+    dw !IBranchItem, .end
     dw !IDrawCustom1
     dw !IDrawCustom2
     dw !IGotoDecrement, .loop
