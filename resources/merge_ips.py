@@ -10,8 +10,8 @@ else:
 	new_name = sys.argv[1]
 	org_name = sys.argv[2]
 
-fn = open(os.path.dirname(os.path.realpath(__file__)) + "/" + new_name, "rb")
-fo = open(os.path.dirname(os.path.realpath(__file__)) + "/" + org_name, "rb+")
+fn = open(new_name, "rb")
+fo = open(org_name, "rb+")
 
 print("Merging %s into %s" % (new_name, org_name))
 
