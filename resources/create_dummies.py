@@ -9,8 +9,8 @@ else:
 	zero_name = sys.argv[1]
 	ff_name = sys.argv[2]
 
-fo_z = open(os.path.dirname(os.path.realpath(__file__)) + "/" + zero_name, "wb")
-fo_f = open(os.path.dirname(os.path.realpath(__file__)) + "/" + ff_name, "wb")
+fo_z = open(zero_name, "wb")
+fo_f = open(ff_name, "wb")
 
 # Increase to 4 mb to account for custom sprites
 fo_z.write(bytes([0x00] * 1024 * 1024 * 4))
