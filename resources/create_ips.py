@@ -10,9 +10,9 @@ else:
 	ff_name = sys.argv[2]
 	output_name = sys.argv[3]
 
-f_zero = open(os.path.dirname(os.path.realpath(__file__)) + "/" + zero_name, "rb")
-f_ff = open(os.path.dirname(os.path.realpath(__file__)) + "/" + ff_name, "rb")
-fo = open(os.path.dirname(os.path.realpath(__file__)) + "/" + output_name, "wb")
+f_zero = open(zero_name, "rb")
+f_ff = open(ff_name, "rb")
+fo = open(output_name, "wb")
 
 d_zero = f_zero.read()
 d_ff = f_ff.read()

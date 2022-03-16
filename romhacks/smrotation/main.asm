@@ -33,37 +33,29 @@ org $808000				; Disable copy protection screen
 	db $ff
 
 ; Config flags
-incsrc config.asm
+incsrc ../../common/config.asm
 
 ; Super Metroid custom Samus sprite "engine" by Artheau
 ;incsrc "sprite/sprite.asm"
 
 ; These patches include their own origins and patch locations
-;incsrc randopatches/introskip.asm
-;incsrc randopatches/wake_zebes.asm
-;incsrc randopatches/misc.asm
-incsrc randopatches/nofanfare.asm
-;incsrc randopatches/g4_skip.asm
-;incsrc randopatches/credits.asm
-;incsrc randopatches/tracking.asm
-;incsrc randopatches/seed_display.asm
-;incsrc randopatches/max_ammo.asm
+incsrc ../../common/nofanfare.asm
 
 ; Start anywhere patch, not used right now until graph based generation is in.
 ; incsrc startanywhere.asm
 
 ; Add code to the main code bank
-org $b88000
-incsrc common.asm
-incsrc randolive.asm
-incsrc multiworld.asm
-incsrc items.asm
+org $e28000
+incsrc ../../common/randolive.asm
+incsrc ../../common/multiworld.asm
+incsrc ../../common/items.asm
 
-org $b8cf00
-incsrc seeddata.asm
+;incompatible with sm: rotation:
+;org $b8cf00
+;incsrc seeddata.asm
 
-org $b8d000
-incsrc playertable.asm
+org $e2d000
+incsrc ../../common/playertable.asm
 
-org $b8e000
-incsrc itemtable.asm
+org $e2e000
+incsrc ../../common/itemtable.asm
