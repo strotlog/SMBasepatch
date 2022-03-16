@@ -418,6 +418,11 @@ i_live_pickup:
 
 .own_item
     ply : pla
+    lda.l $4eff06
+    and #$0002
+    cmp #$0000
+    bne .end  
+    
     lda.l rando_item_table+$2, x ; Load item id
     cmp #$0015
     bmi .local_item1
