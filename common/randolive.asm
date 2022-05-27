@@ -45,17 +45,17 @@ write_long_message:
     ; Write end pointer to tmp
     pla
     asl
-    sta !MESSAGETMP
+    sta.b !MESSAGETMP
     txa
     clc
-    adc !MESSAGETMP
-    sta !MESSAGETMP
+    adc.b !MESSAGETMP
+    sta.b !MESSAGETMP
 
 -   lda $0000, y
     sta.l !MESSAGES_OUT+$2, x
     iny #2
     inx #2
-    cpx !MESSAGETMP
+    cpx.b !MESSAGETMP
     bne -
 
     lda.l !SNES_WRITEPTR
@@ -120,11 +120,13 @@ init_randolive:
 
 nmi_read_messages:
     rep #$30
-    lda config_multiworld
+    lda.l config_multiworld
     beq +
     lda.l !MESSAGEBASE+$18E
     bne +
     jsl read_messages
 +
-    inc $05b8
+    lda.l $7e05b8
+    inc a
+    sta.l $7e05b8
     rtl

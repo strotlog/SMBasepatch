@@ -46,13 +46,15 @@ incsrc ../common/nofanfare.asm
 
 ; Add code to the main code bank
 org $b88000
-incsrc ../common/common.asm
 incsrc ../common/randolive.asm
 incsrc ../common/multiworld.asm
 incsrc ../common/items.asm
 
 org $b8cf00
 incsrc ../common/seeddata.asm
+
+org $b8c800
+incsrc ../common/startitem.asm
 
 org $b8d000
 incsrc ../common/playertable.asm

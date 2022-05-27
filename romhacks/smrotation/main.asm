@@ -54,6 +54,9 @@ incsrc ../../common/items.asm
 ;org $b8cf00
 ;incsrc seeddata.asm
 
+org $e2c800
+incsrc ../../common/startitem.asm
+
 org $e2d000
 incsrc ../../common/playertable.asm
 
