@@ -134,6 +134,7 @@ rando_player_table:
     db "123456789012" : dw $0000, $0000
 
 ; Player id table for multiworld mapping with rando_player_table
+; TODO this is longer than it needs to be right? is 25*16 should be 2*128
 rando_player_id_table:
     dw $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000
     dw $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000

@@ -31,8 +31,12 @@ pushpc
 
 ; Add custom PLM that can asynchronously load in items
 org $84f870                               ; lordlou: had to move this from original place ($84efe0) since it conflicts with VariaRandomizer's beam_doors_plms patch
+; ALL items in archipelago sm will use one of these 3 PLMs:
+archipelago_visible_item_plm:
     dw i_visible_item_setup, v_item       ;f870
+archipelago_chozo_item_plm:
     dw i_visible_item_setup, c_item       ;f874
+archipelago_hidden_item_plm:
     dw i_hidden_item_setup,  h_item       ;f878
 
 v_item:
@@ -69,6 +73,9 @@ sm_item_graphics:
     dw $9100 : db $00, $00, $00, $00, $00, $00, $00, $00    ; off-world progression item
     dw $9200 : db $00, $00, $00, $00, $00, $00, $00, $00    ; off-world item
 
+; define offworld_graphics pointer for symbols so that randomizer's patcher can be aware of it (to stop hard-coding at some point in the future).
+; offworld item graphics will fill in at that location, which is after vanilla item graphics in ROM
+!offworld_graphics = $899100
 sm_item_table:
     ; pickup, qty,   msg,   type,  ext2,  ext3,  loop,  hloop
     dw $8968, $0064, $0000, $0000, $0000, $0000, #p_etank_loop, #p_etank_hloop     ; E-Tank
@@ -418,7 +425,7 @@ i_live_pickup:
 
 .own_item
     ply : pla
-    lda.l $4eff06
+    lda.l config_remote_items
     and #$0002
     cmp #$0000
     bne .end  
