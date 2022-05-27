@@ -69,11 +69,6 @@ define check_new_game   $A1F210
 // routine in tracking.asm
 define update_and_store_region_time $A1EC00
 
-// Multiworld hook addresses
-define init_memory $b88000
-define mw_save_sram $b8813e
-define mw_load_sram $b8814d
-
 // Patch boot to init our stuff
 org $80844B
     jml boot1
@@ -89,9 +84,6 @@ org $81800d
 	jsr patch_save_start
 org $81807f
     jmp patch_save_end
-
-org $8180f7
-    jmp patch_load_multiworld
 
 org $81A24A
     jsl patch_load // patch load from menu only
@@ -210,9 +202,6 @@ boot1:
     sta {timer1}
     lda {timer_backup2}
     sta {timer2}
-
-    // Multiworld init
-    jsl {init_memory}
     // resume
     jml $808455
 
@@ -326,8 +315,6 @@ opt_backup:
 // put that here to have it at a fixed location (will be called from new_game)
 print "new_save: ", org
 new_save:
-    ldx #$0000
-    jsl start_item
 	// call save routine
 	lda {current_save_slot}
 	jsl $818000
@@ -620,7 +607,6 @@ patch_save_end:
     sta {stats_timer}+2
     lda #$0001
     jsl save_stats
-    jsl {mw_save_sram}
 .end:
     ply
     plx
@@ -720,7 +706,6 @@ patch_load:
     // return carry clear
     clc
 .end:
-    jsl {mw_load_sram}
     ply
     plx
     plb
@@ -828,18 +813,7 @@ patch_clear:
 	lda $19b7	// hijacked code
 	rts
 
-patch_load_multiworld:
-    lda $7e0952
-    clc
-    adc #$0010
-    jsl {mw_load_sram}  
-    ply
-    plx
-    clc
-    plb
-    rtl
-
-print "b81 end: ", org
+//print "b81 end: ", org
 warnpc $81f29f
 ////////////////////////// CREDITS /////////////////////////////
 
@@ -1431,25 +1405,6 @@ dec_stat:
     plx
     rtl
 
-update_graphic:
-    cmp #$0000
-    beq +
-    lda #$0001
-    sta $7E09C0    
- +   
-    lda $7E09A2
-    bit #$4000
-    beq +
-    jsl $809A2E   // thanks PierRoulette
-+    
-    lda $7E09A2
-    bit #$8000
-    beq +
-    jsl $809A3E   // thanks PierRoulette
-+
-    jsl $90AC8D   // thanks PierRoulette
-    rts
-
 warnpc $dfd87f
 // Store Statistic (value in A, stat in X)
 org $dfd880
@@ -1473,41 +1428,6 @@ load_stat:
     tax
     lda {stats_ram}, x
     plx
-    rtl
-
-start_item_data_major:
-    dw $0000, $0000, $0000, $0000
-start_item_data_minor:
-    dw $0063, $0063, $0000, $0000
-    dw $0000, $0000, $0000, $0000
-start_item_data_reserve:
-    dw $0000, $0000
-
-start_item:
--
-    lda start_item_data_major, x
-    sta $7E09A2, x
-    inx 
-    inx
-    cpx #$0008
-    bne -
-    ldx #$0000
--
-    lda start_item_data_minor, x
-    sta $7E09C2, x
-    inx
-    inx
-    cpx #$0010
-    bne -
-    ldx #$0000
--
-    lda start_item_data_reserve, x
-    sta $7E09D4, x
-    inx
-    inx
-    cpx #$0004
-    bne -
-    jsr update_graphic
     rtl
 
 warnpc $dfd91a

@@ -24,34 +24,35 @@ startroom_save_plm:
 
 org $82fd00
 start_anywhere:
-    lda startroom_id
+    lda.l startroom_id
     beq .ret
 
     ; Make sure game mode is 1f
-    lda $7e0998
+    lda.l $7e0998
     cmp.w #$001f
     bne .ret
     
     ; Check if samus saved energy is 00, if it is, run startup code
-    lda $7ed7e2
+    lda.l $7ed7e2
     bne .ret
 
-    lda startroom_region
-    sta $079F
+    lda.l startroom_region
+    sta.l $7e079F
     lda #$0007
-    sta $078B
+    sta.l $7e078B
 
 .ret
     jsr $819B
     rts
 
 inject_savestation:
-    lda $079b    ; Load room id
-    cmp startroom_id
+    lda.l $7e079b    ; Load room id
+    cmp.l startroom_id
     bne .end
                  
-    ldx.w #startroom_save_plm
-    lda.w $0000, x
+    lda.l #startroom_save_plm
+    tax
+    lda.l $7e0000, x
     jsl $84846a  ; create PLM
 
 .end

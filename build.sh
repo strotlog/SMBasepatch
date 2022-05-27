@@ -36,6 +36,10 @@ for subdir in $(ls -d vanilla romhacks/*); do
     pushd $ROOTDIR/$subdir > /dev/null
     $ASAR --no-title-check --symbols=wla --symbols-path=$ROOTDIR/build/$subdir/multiworld.sym main.asm $ROOTDIR/build/00.sfc
     $ASAR --no-title-check --symbols=wla --symbols-path=$ROOTDIR/build/$subdir/multiworld.sym main.asm $ROOTDIR/build/ff.sfc
+    if [[ $? != 0 ]]; then
+        popd > /dev/null
+        exit 1
+    fi
     popd > /dev/null
     $PYTHON resources/create_ips.py build/00.sfc build/ff.sfc build/$subdir/multiworld-basepatch.ips
     echo Built: build/$subdir/multiworld-basepatch.ips
@@ -61,8 +65,10 @@ for subdir in $(ls -d vanilla romhacks/*); do
                     echo WARNING: $ipsfile is older than variapatches/$basename.asm . Possible old ips patch that needs to be re-compiled - re-compiling is manual and may require xkas-plus.
                 fi
             fi
+            echo -n " "
             $PYTHON resources/merge_ips.py $ipsfile build/$subdir/variapatches.ips
         done
+        echo "Merged: build/$subdir/variapatches.ips"
     fi
 
 done

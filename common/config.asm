@@ -8,4 +8,7 @@ config_sprite: ; $CEFF02
     dw $0000
 ; AP DeathLink enabled
 config_deathlink: ; $CEFF04
-    dw $00
+    dw $0000
+; AP remote items enabled
+config_remote_items:
+    dw $0000
