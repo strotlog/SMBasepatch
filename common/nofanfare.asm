@@ -263,32 +263,6 @@
 
 ;-------------------------DON'T EDIT THIS STUFF--------------------------
 
-org $858490
-	JSR CLIPLEN
-org $85FF00
-CLIPLEN:
-	PHA
-	LDA.L config_multiworld
-	BEQ .no_multi
-	LDX #$0020
-	BRA .end
-.no_multi
-	LDX #$0168
-.end
-	PLA
-	RTS
-
-
-org $82E126
-	JSL CLIPCHECK
-	BRA $08
-org $858089
-	BRA $02
-org $848BF2
-NORMAL:
-	JSR CLIPSET
-
-org $84FF00			;You can safely change this address to free space in bank $84 ($20000-$27FFF)
 CLIPCHECK:
 	LDA $05D7
 	CMP #$0002
@@ -300,28 +274,65 @@ CLIPCHECK:
 	LDA #$0000
 	STA $05D7
 	RTL
+
 CLIPSET:
 	LDA #$0001
-	STA $05D7
+	STA.l $7E05D7
 	JSL $82BE17
 	LDA #$0000
-	RTS
+	; restore overwritten instruction
+	STA.l $7E063F
+	RTL
+
 SOUNDFX:
-	JSR SETFX
+	JSL SETFX
 	AND #$00FF
 	JSL $809049
-	RTS
+	RTL
+
 SPECIALFX:
-	JSR SETFX
+	JSL SETFX
 	JSL $8090CB
 	RTS
+
 MISCFX:
-	JSR SETFX
+	JSL SETFX
 	JSL $80914D
 	RTS
+
 SETFX:
 	LDA #$0002
 	STA $05D7
 	LDA $0000,y
 	INY
+	RTL
+
+pushpc
+org $858490
+	JSR CLIPLEN
+
+org $859900
+CLIPLEN:
+	PHA
+	LDA.l config_multiworld
+	BEQ .no_multi
+	LDX #$0020
+	BRA .end
+.no_multi
+	LDX #$0168 ; original
+.end
+	PLA
 	RTS
+
+org $82E126
+	JSL CLIPCHECK
+	BRA $08
+
+org $858089
+	BRA $02
+
+org $848BF2
+NORMAL:
+	JSL CLIPSET
+	NOP : NOP
+pullpc

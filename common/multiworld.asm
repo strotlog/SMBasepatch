@@ -62,9 +62,10 @@ mw_init:
     rtl
 
 ; Write multiworld item message
-; A = item index, X = item id, Y = world id (all 16-bit)
+; A = item id, X = item index, Y = world id (all 16-bit)
 mw_write_message:
-    pha : phx
+    pha : phx ; for preserving
+    phx : pha ; for pulling into A to write out
     lda.l !SRAM_MW_ITEMS_SENT_WPTR
     asl #3 : tax
     tya
@@ -77,6 +78,7 @@ mw_write_message:
     lda.l !SRAM_MW_ITEMS_SENT_WPTR
     inc a
     sta.l !SRAM_MW_ITEMS_SENT_WPTR
+    plx : pla
     rtl
 
 mw_save_sram:
@@ -105,31 +107,60 @@ mw_display_item_sent:
     sty.b $c3
     ;lda #$0168       ; With fanfare skip, no need to queue room track
     ;jsl $82e118      ; Queue room track after item fanfare
-    lda #$001d
+    lda #$7b49 ; magic number
+    sta.b $cc
+    lda #$0300 ; item sent message box override
+    sta.b $ce
+    lda #$0019 ; param to function: message box id of something fake but known. 19h = reserve tank. will be overridden by $ce
     jsl $858080
+    stz.b $c1
+    stz.b $c3
+    stz.b $cc
+    stz.b $ce
     rtl
 
+; A = item id
 mw_receive_item:
     pha : phx
     cmp #$0016
-    beq .end                      ; skip receiving if its a Nothing item
+    beq .end                 ; skip receiving if its a Nothing item
     cmp #$0017
-    beq .end                      ; skip receiving if its a No Energy item
+    beq .end                 ; skip receiving if its a No Energy item
     asl #4 : tax
-    lda.l sm_item_table+$2, x     ; Read item flag
+    lda #$7b49 ; magic number
     sta.b $cc
-    lda #$001e
+    lda #$0301 ; item received message box override
     sta.b $ce
     lda.l #sm_item_table
     sta.b $ca
     txa : clc : adc.b $ca : tax
+    stz.b $ca
     ldy #$00cc
-    jsl mw_call_receive           ; Call original item receive code (reading the item to get from $cc-ce)
+    jsl mw_call_receive      ; Call original item receive code in bank $84 (we'll eventually read the message box index from $ce)
 .end
+    stz.b $ce
+    stz.b $cc
     plx : pla
     rts
 
-mw_handle_queue:
+; from varia endingtotals.asm - copying so we don't depend on code address without a symbol,
+;                               and in order to save precious room in bank $84 for optional varia decoupling
+; Returns:
+;     A/X:   Byte index ([A] >> 3)
+;     $05E7: Bitmask (1 << ([A] &  7))
+!CollectedItems  = $7ED86E
+COLLECTTANK:
+    PHA
+    LDA.l !CollectedItems
+    INC A
+    STA.l !CollectedItems
+    PLA
+    ; bit math in preparation for storing to world item states bit array 
+    JSL $80818E ; $80:818E: Change bit index to byte index and bitmask
+    RTL
+
+
+mw_handle_queue: ; receive only
     pha : phx
 
 .loop
@@ -139,30 +170,30 @@ mw_handle_queue:
     beq .end
 
     asl #2 : tax
-    lda.l !SRAM_MW_ITEMS_RECV, x : sta $c3
+    lda.l !SRAM_MW_ITEMS_RECV, x
+    sta.b $c3
     lda.l !SRAM_MW_ITEMS_RECV+$2, x
-    phx
-    pha
+    sta.b $c1
     lda.l config_remote_items
-    and #$0002
-    cmp #$0000
+    bit #$0002
     beq +
-    pla
-    pha 
+    lda.b $c1
     and #$FF00
     cmp #$FF00
     beq +
     lsr #8
-    
-    jsl $84f830
+
+    ; save remote item as collected
+    phx
+    jsl COLLECTTANK
     lda $7ed870, X
-    ora $7e05e7
+    ora $7e05e7 ; read and or the bit output of $80:818E (called by COLLECTTANK)
     sta $7ed870, X
+    plx
 +
-    pla
-    plx 
+    lda.b $c1
     and #$00FF
-    sta $c1
+    sta.b $c1
     jsr mw_receive_item
 
     lda.l !SRAM_MW_ITEMS_RECV_RPTR
@@ -172,8 +203,53 @@ mw_handle_queue:
     bra .loop
 
 .end
+    stz.b $c1
+    stz.b $c3
     plx : pla
     rts
+
+
+i_live_pickup_multiworld:
+    phx : phy : php
+    lda.l $1dc7, x              ; Load PLM room argument
+    asl #3 : tax
+
+    lda.l rando_item_table+$4, x    ; Load item owner into Y
+    tay
+    lda.l rando_item_table+$2, x    ; Load original item id into A
+    cmp #$0015
+    bmi .local_item_or_offworld
+    ; off-world item:
+    lda #$0015              ; ids over 20 are only used to display off-world item names
+.local_item_or_offworld
+    ; params: A = item id, X = item index, Y = world id (all 16-bit)
+    jsl mw_write_message            ; Send message
+    lda.l rando_item_table, x  ; Load item type
+    beq .own_item
+    ; type of item == #$0001: other player's item:
+    lda.l rando_item_table+$2, x    ; Load original item id again, we'll then put it into X this time
+    tax
+    ; params: X = item id, Y = player id
+    jsl mw_display_item_sent     ; Display custom message box
+    bra .end
+
+.own_item
+    lda.l config_remote_items
+    and #$0002
+    bne .end
+
+    lda.l rando_item_table+$2, x ; Load item id
+    cmp #$0015
+    bmi .local_item1
+    lda #$0015              ; ids over 20 are only used to display off-world item names
+.local_item1
+    jsl perform_item_pickup
+    bra .end
+
+.end
+    plp : ply : plx
+    rtl
+
 
 mw_hook_main_game:
     jsl $A09169     ; Last routine of game mode 8 (main gameplay)
@@ -213,37 +289,7 @@ org $828BB3
     jsl mw_hook_main_game
 
 namespace message
-org $859643
-    dw !PlaceholderBig, !Big, item_sent
-    dw !PlaceholderBig, !Big, item_received
-    dw !EmptySmall, !Small, btn_array
-
-table box.tbl,rtl
-    ;   0                              31
-item_sent:
-    dw "___         YOU FOUND        ___"
-    dw "___      ITEM NAME HERE      ___"
-    dw "___           FOR            ___"
-    dw "___          PLAYER          ___"
-
-item_received:
-    dw "___       YOU RECEIVED       ___"
-    dw "___      ITEM NAME HERE      ___"
-    dw "___           FROM           ___"
-    dw "___          PLAYER          ___"
-
-cleartable
-
-btn_array:
-    DW $0000, $012A, $012A, $012C, $012C, $012C, $0000, $0000, $0000, $0000, $0000, $0000, $0120, $0000, $0000
-    DW $0000, $0000, $0000, $012A, $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000
-    DW $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000
-    DW $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000
-    DW $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000
-    DW $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000
-    DW $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000
-    DW $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000
-    DW $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000
+org $859963
 
 table box_yellow.tbl,rtl
 item_names:
@@ -374,14 +420,27 @@ item_names:
 cleartable
 
 
+table box.tbl,rtl
+    ;   0                              31
+item_sent:
+    dw "___         YOU FOUND        ___"
+    dw "___      ITEM NAME HERE      ___"
+    dw "___           FOR            ___"
+    dw "___          PLAYER          ___"
+item_sent_end:
+
+item_received:
+    dw "___       YOU RECEIVED       ___"
+    dw "___      ITEM NAME HERE      ___"
+    dw "___           FROM           ___"
+    dw "___          PLAYER          ___"
+item_received_end:
+
+cleartable
+
+
 write_placeholders:
     phx : phy
-    lda.l $7e1c1f
-    cmp #$001d
-    beq .adjust
-    cmp #$001e
-    beq .adjust
-    bra .end
 
 .adjust
     lda.b $c1                 ; Load item id
@@ -392,7 +451,7 @@ write_placeholders:
               ; note, item_names must be in an exlpicitly known bank (here, same bank as this asm)
               ; .. in order to index into it with lda ,y (there is no lda.l ,y)
 -
-    lda.w item_names, y       ; Write item name to box
+    lda item_names, y       ; Write item name to box
     sta.l $7e3280, x
     inx #2 : iny #2
     cpx #$0040
@@ -445,38 +504,97 @@ char_table:
     ;    P      Q      R      S      T      U      V      W      X      Y      Z      [      \      ]      ^      _
     dw $38EF, $38F0, $38F1, $38F2, $38F3, $38F4, $38F5, $38F6, $38F7, $38F8, $38F9, $38FE, $38FE, $38FE, $38FE, $38FE
 
-org $858749
-fix_1c1f:
-    LDA.l $7e00CE     ; if $CE is set, it overrides the message box
-    BEQ +
-    STA.l $7e1C1F
-    LDA #$0000
-    STA.l $7e00CE     ; Clear $CE
-+   LDA.l $7e1C1F
-    CMP #$001D
-    BPL +
-    RTS
-+
-    ADC #$027F
-    RTS
-EmptyBig:
-    REP #$30
-    LDY #$0000
-    JMP $841D
 PlaceholderBig:
+    ; warning: if calling directly, caller must restore their own register widths, since $85:841D calls $85:831E, which blithely SEPs #$20
     REP #$30
     JSR write_placeholders
     LDY #$0000
     JMP $841D
 
-org $858243
-    JSR fix_1c1f
+; if we need a multiworld message box, call its setup functions
+; else go back to the vanilla way of init'ing a message box
+; return value:
+;   sec if multiworld functions called
+;   clc if vanilla behavior should continue
+multiworld_init_new_messagebox_if_needed:
+    pha
+    lda.b $cc     ; if $cc and $ce are set, they overrides the message box
+    cmp #$7b49 ; magic number
+    bne .vanilla
+    lda.b $ce
+    cmp #$0300
+    beq .msgbox_mwsend
+    cmp #$0301
+    beq .msgbox_mwrecv
+.vanilla
+    ; restore original code
+    pla
+    dec
+    asl
+    sta.b $34
+    asl
+    clc
+    rts
+.msgbox_mwsend
+.msgbox_mwrecv
+    ; simulate table entry: dw !PlaceholderBig, !Big, item_sent
+    ;       or table entry: dw !PlaceholderBig, !Big, item_received
+    jsr $825A ; vanilla large message box init routine $85:825A (no parameters)
+    php
+    jsr PlaceholderBig
+    plp
+    pla
+    sec ; set carry, indicating skip normal table-based function calls
+    rts
 
-org $8582E5
-    JSR fix_1c1f
+; if we need a multiworld message box, calculate its data source
+; else restore vanilla code
+; return value:
+;   if multiworld, these values are modified from original code:
+;      in mem location $00: message tilemap source (like memcpy src) (bank $85 implied)
+;      in mem location $09: message tilemap size   (like memcpy n bytes)
+;      in A:                ^same value as held in $09 (next vanilla instruction to execute in all cases will be sta.b $09 btw)
+hook_tilemap_calc:
+    ; orig code figures out source and size based on table value math; for the 2 multiworld messages, no message table, we set fixed sources and sizes in the code here
+    pha
+    lda.b $ce     ; if $ce is set, it overrides the message box
+    cmp #$0300
+    beq .msgbox_mwsend
+    cmp #$0301
+    beq .msgbox_mwrecv
+.vanilla
+    ; restore original code
+    pla
+    sec
+    sbc.b $00
+    rts
+.msgbox_mwsend
+    pla
+    stz.b $ce
+    lda #item_sent ; 16-bit pointer to sent box template
+    sta.b $00 ; $00 = message tilemap source
+    lda #(item_sent_end-item_sent)
+    sta.b $09 ; $09 = message tilemap size
+    rts
+.msgbox_mwrecv
+    pla
+    stz.b $ce
+    lda #item_received ; 16-bit pointer to receive box template
+    sta.b $00 ; $00 = message tilemap source
+    lda #(item_received_end-item_received)
+    sta.b $09 ; $09 = message tilemap size
+    rts
+    
 
-org $858413
-    DW btn_array
+; hook the relevant locations where an item's message box index will be read from $1c1f in RAM and used
+org $858246 ; inside $85:8241 Initialise message box
+    jsr multiworld_init_new_messagebox_if_needed
+    bcc .normal
+    rts ; functions were already called, don't call again
+.normal
+
+org $8582F9 ; inside $85:82B8 Write message tilemap
+    jsr hook_tilemap_calc
 
 pullpc
 namespace off

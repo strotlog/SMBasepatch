@@ -45,23 +45,23 @@ incsrc ../../common/nofanfare.asm
 ; incsrc startanywhere.asm
 
 ; Add code to the main code bank
-org $e28000
+org $e58000
 incsrc ../../common/multiworld.asm
-org $e28800
+org $e58800
 incsrc ../../common/itemextras.asm
 
-org $84f870                               ; lordlou: had to move this from original place ($84efe0) since it conflicts with VariaRandomizer's beam_doors_plms patch
+org $84fbc0  ; strtolog: had to move from previous place ($84f870) to fit into the bank along with zfactor's PLMs, with only 13 (0xd) bytes to spare
 incsrc ../../common/items.asm
 
-;incompatible with sm: rotation:
+;incompatible with zfactor?
 ;org $b8cf00
 ;incsrc seeddata.asm
 
-org $e2c800
+org $e5c800
 incsrc ../../common/startitem.asm
 
-org $e2d000
+org $e5d000
 incsrc ../../common/playertable.asm
 
-org $e2e000
+org $e5e000
 incsrc ../../common/itemtable.asm

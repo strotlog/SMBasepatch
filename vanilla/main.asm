@@ -38,7 +38,7 @@ incsrc ../common/config.asm
 ; Super Metroid custom Samus sprite "engine" by Artheau
 ;incsrc "sprite/sprite.asm"
 
-; These patches include their own origins and patch locations
+org $85FF00
 incsrc ../common/nofanfare.asm
 
 ; Start anywhere patch, not used right now until graph based generation is in.
@@ -47,6 +47,10 @@ incsrc ../common/nofanfare.asm
 ; Add code to the main code bank
 org $b88000
 incsrc ../common/multiworld.asm
+org $b88800
+incsrc ../common/itemextras.asm
+
+org $84f870                               ; lordlou: had to move this from original place ($84efe0) since it conflicts with VariaRandomizer's beam_doors_plms patch
 incsrc ../common/items.asm
 
 org $b8cf00
