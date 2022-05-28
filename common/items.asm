@@ -23,21 +23,21 @@
 
 !ITEM_RAM = $7E09A2
 
-; SM Item Patches
-pushpc
+; SM Item Patches (bank $84)
 
+;pushpc
 ;org $8095f7
 ;    jsl nmi_read_messages : nop
+;pullpc
 
 ; Add custom PLM that can asynchronously load in items
-org $84f870                               ; lordlou: had to move this from original place ($84efe0) since it conflicts with VariaRandomizer's beam_doors_plms patch
 ; ALL items in archipelago sm will use one of these 3 PLMs:
 archipelago_visible_item_plm:
-    dw i_visible_item_setup, v_item       ;f870
+    dw i_visible_item_setup, v_item       ;f870 if we're org'ed at $84f870
 archipelago_chozo_item_plm:
-    dw i_visible_item_setup, c_item       ;f874
+    dw i_visible_item_setup, c_item       ;f874 if we're org'ed at $84f870
 archipelago_hidden_item_plm:
-    dw i_hidden_item_setup,  h_item       ;f878
+    dw i_hidden_item_setup,  h_item       ;f878 if we're org'ed at $84f870
 
 v_item:
     dw !IVisibleItem
@@ -46,36 +46,7 @@ c_item:
 h_item:
     dw !IHiddenItem
 
-; Graphics pointers for items (by item index)
-sm_item_graphics:
-    dw $0008 : db $00, $00, $00, $00, $00, $00, $00, $00    ; Energy Tank
-    dw $000A : db $00, $00, $00, $00, $00, $00, $00, $00    ; Missile
-    dw $000C : db $00, $00, $00, $00, $00, $00, $00, $00    ; Super Missile
-    dw $000E : db $00, $00, $00, $00, $00, $00, $00, $00    ; Power Bomb
 
-    dw $8000 : db $00, $00, $00, $00, $00, $00, $00, $00    ; Bombs
-    dw $8B00 : db $00, $00, $00, $00, $00, $00, $00, $00    ; Charge
-    dw $8C00 : db $00, $03, $00, $00, $00, $03, $00, $00    ; Ice Beam
-    dw $8400 : db $00, $00, $00, $00, $00, $00, $00, $00    ; Hi-Jump
-    dw $8A00 : db $00, $00, $00, $00, $00, $00, $00, $00    ; Speed booster
-    dw $8D00 : db $00, $02, $00, $00, $00, $02, $00, $00    ; Wave beam
-    dw $8F00 : db $00, $00, $00, $00, $00, $00, $00, $00    ; Spazer
-    dw $8200 : db $00, $00, $00, $00, $00, $00, $00, $00    ; Spring ball
-    dw $8300 : db $00, $00, $00, $00, $00, $00, $00, $00    ; Varia suit
-    dw $8100 : db $00, $00, $00, $00, $00, $00, $00, $00    ; Gravity suit
-    dw $8900 : db $01, $01, $00, $00, $03, $03, $00, $00    ; X-ray scope
-    dw $8E00 : db $00, $01, $00, $00, $00, $01, $00, $00    ; Plasma beam
-    dw $8800 : db $00, $00, $00, $00, $00, $00, $00, $00    ; Grapple beam
-    dw $8600 : db $00, $00, $00, $00, $00, $00, $00, $00    ; Space jump
-    dw $8500 : db $00, $00, $00, $00, $00, $00, $00, $00    ; Screw attack
-    dw $8700 : db $00, $00, $00, $00, $00, $00, $00, $00    ; Morph ball
-    dw $9000 : db $00, $00, $00, $00, $00, $00, $00, $00    ; Reserve tank
-    dw $9100 : db $00, $00, $00, $00, $00, $00, $00, $00    ; off-world progression item
-    dw $9200 : db $00, $00, $00, $00, $00, $00, $00, $00    ; off-world item
-
-; define offworld_graphics pointer for symbols so that randomizer's patcher can be aware of it (to stop hard-coding at some point in the future).
-; offworld item graphics will fill in at that location, which is after vanilla item graphics in ROM
-!offworld_graphics = $899100
 sm_item_table:
     ; pickup, qty,   msg,   type,  ext2,  ext3,  loop,  hloop
     dw $8968, $0064, $0000, $0000, $0000, $0000, #p_etank_loop, #p_etank_hloop     ; E-Tank
@@ -183,7 +154,7 @@ p_visible_item:
     dw !IGoto, .loop
     .trigger
     dw !ISetItem
-    dw SOUNDFX : db !Click
+    dw SOUNDFX_84 : db !Click
     dw !IPickup
     .end
     dw !IGoto, $dfa9
@@ -204,7 +175,7 @@ p_chozo_item:
     dw !IGoto, .loop
     .trigger
     dw !ISetItem
-    dw SOUNDFX : db !Click
+    dw SOUNDFX_84 : db !Click
     dw !IPickup
     .end
     dw $0001, $a2b5
@@ -228,11 +199,15 @@ p_hidden_item:
     dw !IGoto, .loop2
     .trigger
     dw !ISetItem
-    dw SOUNDFX : db !Click
+    dw SOUNDFX_84 : db !Click
     dw !IPickup
     .end
     dw !IJSR, $e032
     dw !IGoto, .loop2
+
+SOUNDFX_84:
+    jsl SOUNDFX
+    rts
 
 i_start_draw_loop:
     phy : phx
@@ -240,10 +215,11 @@ i_start_draw_loop:
     asl #3 : tax
     lda.l rando_item_table+$2, x ; Load item id
     cmp #$0015
-    bmi .local_item
-    lda.l #$0015              ; ids over 20 are only used to display off-world item names
-    clc : adc rando_item_table+$6, x      ; add one if off-world item isnt progression
-.local_item
+    bmi .all_items
+    ; offworld item:
+    lda #$0015              ; item ids over 20 (#$0015 and up) are used to display off-world item names, but the graphics are always either item gfx #$0015 or #$0016
+    clc : adc.l rando_item_table+$6, x      ; add one if off-world item isnt progression
+.all_items
     asl #4
     clc : adc #$000C
     tax
@@ -264,10 +240,11 @@ i_start_hidden_draw_loop:
     asl #3 : tax
     lda.l rando_item_table+$2, x ; Load item id
     cmp #$0015
-    bmi .local_item
-    lda.l #$0015              ; ids over 20 are only used to display off-world item names
-    clc : adc rando_item_table+$6, x      ; add one if off-world item isnt progression
-.local_item
+    bmi .all_items
+    ; offworld item:
+    lda #$0015              ; item ids over 20 (#$0015 and up) are used to display off-world item names, but the graphics are always either item gfx #$0015 or #$0016
+    clc : adc.l rando_item_table+$6, x      ; add one if off-world item isnt progression
+.all_items
     asl #4
     clc : adc #$000E
     tax
@@ -282,103 +259,45 @@ i_start_hidden_draw_loop:
     ply
     rts
 
+
 i_load_custom_graphics:
     phy : phx : phx
-    lda $1dc7, x              ; Load PLM room argument
-    asl #3 : tax
-    lda.l rando_item_table+$2, x ; Load item id
+    lda $1dc7, x                   ; Load PLM room argument (tells us which of the 100 items this is)
+    asl #3                         ; Multiply by 8 for table width
+    tax
+    lda.l rando_item_table+$2, x      ; Load item id from item table
     cmp #$0015
-    bmi .local_item
-    lda.l #$0015              ; ids over 20 are only used to display off-world item names
-    clc : adc rando_item_table+$6, x      ; add one if off-world item isnt progression
-.local_item
+    bmi .all_items
+    ; offworld item:
+    lda #$0015              ; item ids over 20 (#$0015 and up) are used to display off-world item names, but the graphics are always either item gfx #$0015 or #$0016
+    clc : adc.l rando_item_table+$6, x      ; add one if off-world item isnt progression
+.all_items
     plx
 
-    %a8()
-    sta $4202
-    lda #$0A
-    sta $4203
-    nop : nop : %ai16()
-    lda $4216               ; Multiply it by 0x0A
-    clc
-    adc #sm_item_graphics
-    tay                     ; Add it to the graphics table and transfer into Y
-    lda $0000, y
-    cmp #$8000
-    bcc .no_custom    
+    asl ; multiply by 2 for table width
+    tax
+    lda.l sm_item_graphics, x
+    bpl .alwaysloaded   ; if high bit is not set, this isn't a pointer
+    tay ; Y = pointer to 10-byte graphics entry to load (implied bank $84)
+    plx ; X = PLM index again
     jsr $8764               ; Jump to original PLM graphics loading routine
-    plx
     ply
     rts
 
-.no_custom
-    tay
-    lda $0000, y
+.alwaysloaded
+    tax
+    lda.b $00, x
+    plx ; X = PLM index again
     sta.l $7edf0c, x
-    plx
     ply
     rts
 
 i_visible_item_setup:
-    phy : phx
-    lda $1dc7, y                    ; Load PLM room argument (contains location index of item)
-    asl #3                          ; Multiply by 8 for table width
-    tax
-    lda.l rando_item_table+$2, x       ; Load item id from item table
-    cmp #$0015
-    bmi .local_item
-    lda.l #$0015              ; ids over 20 are only used to display off-world item names
-    clc : adc rando_item_table+$6, x      ; add one if off-world item isnt progression
-.local_item
-    %a8()
-    sta $4202
-    lda #$0A
-    sta $4203
-    nop : nop : %ai16()
-    lda $4216                       ; Multiply it by 0x0A
-    tax
-
-    lda sm_item_graphics, x
-    cmp #$8000
-    bcc .no_custom
-    plx : ply
-    jmp $ee64
-
-.no_custom
-    plx : ply
-    tyx
-    sta.l $7edf0c, x
-    jmp $ee64
+    jsl i_item_setup_shared
+    jmp $ee64 ; generic visible item setup
 
 i_hidden_item_setup:
-    phy : phx
-    lda $1dc7, y                    ; Load PLM room argument (contains location index of item)
-    asl #3                          ; Multiply by 8 for table width
-    tax
-    lda.l rando_item_table+$2, x       ; Load item id from item table
-    cmp #$0015
-    bmi .local_item
-    lda.l #$0015              ; ids over 20 are only used to display off-world item names
-    clc : adc rando_item_table+$6, x      ; add one if off-world item isnt progression
-.local_item
-    %a8()
-    sta $4202
-    lda #$0A
-    sta $4203
-    nop : nop : %ai16()
-    lda $4216                       ; Multiply it by 0x0A
-    tax
-
-    lda sm_item_graphics, x
-    cmp #$8000
-    bcc .no_custom
-    plx : ply
-    jmp $ee8e
-    
-.no_custom
-    plx : ply
-    tyx
-    sta.l $7edf0c, x
+    jsl i_item_setup_shared
     jmp $ee8e
 
 
@@ -396,55 +315,11 @@ i_load_rando_item:
 
 ; Pick up SM item
 i_live_pickup:
-    phx : phy : php
-    lda $1dc7, x              ; Load PLM room argument
-    asl #3 : tax
-    
-    ; lda.l rando_item_table, x ; Load item type
-    ; beq .own_item
-
-.multiworld_item                    ; This is someone elses item, send message
-    phx
-    lda.l rando_item_table+$4, x    ; Load item owner into Y
-    tay
-    lda.l rando_item_table+$2, x    ; Load original item id into X
-    tax
-    cmp #$0015
-    bmi .local_item
-    lda.l #$0015              ; ids over 20 are only used to display off-world item names
-.local_item
-    pla                             ; Multiworld item table id in A
-    phx : phy : pha
-    jsl mw_write_message            ; Send message
-    plx
-    lda.l rando_item_table, x ; Load item type
-    beq .own_item
-    ply : plx
-    jsl mw_display_item_sent     ; Display custom message box
-    bra .end
-
-.own_item
-    ply : pla
-    lda.l config_remote_items
-    and #$0002
-    cmp #$0000
-    bne .end  
-    
-    lda.l rando_item_table+$2, x ; Load item id
-    cmp #$0015
-    bmi .local_item1
-    lda.l #$0015              ; ids over 20 are only used to display off-world item names
-.local_item1
-    jsr receive_sm_item
-    bra .end
-
-.end
-    plp : ply : plx
+    jsl i_live_pickup_multiworld
     rts
 
-
-; Item index to receive in A
-receive_sm_item:
+; Item index to receive in A (any item in this world touched by samus)
+perform_item_pickup:
     asl : asl : asl : asl
     phx
     clc
@@ -454,15 +329,27 @@ receive_sm_item:
     iny : iny          ; Y points to data to be used in item pickup routine
     jsr ($0000,x)
     plx
-    rts
+    rtl
 
 mw_call_receive:
     phx : phy
-    jsr SETFX
+    jsl SETFX
     lda #$0037
-    jsl $809049
+    jsl $809049 ; play sound
     ply : plx
-    jsr ($0000,x)
+    jsr ($0000,x) ; call $84:x
     rtl
 
-pullpc
+; new PLM graphics (only 2)
+plm_graphics_entry_offworld_progression_item:
+    dw offworld_graphics_data_progression_item : db $00, $00, $00, $00, $00, $00, $00, $00    ; off-world progression item (pointer = $9100)
+plm_graphics_entry_offworld_item:
+    dw offworld_graphics_data_item             : db $00, $00, $00, $00, $00, $00, $00, $00    ; off-world item (pointer = $9200)
+
+pushpc
+org $899100
+offworld_graphics_data_progression_item:
+org $899200
+offworld_graphics_data_item:
+; the randomizer's patcher will write the actual graphics here at $89:9100 and $89:9200
+pullpc ; back to bank $84
