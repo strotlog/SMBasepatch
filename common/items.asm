@@ -46,33 +46,14 @@ c_item:
 h_item:
     dw !IHiddenItem
 
-
-sm_item_table:
-    ; pickup, qty,   msg,   type,  ext2,  ext3,  loop,  hloop
-    dw $8968, $0064, $0000, $0000, $0000, $0000, #p_etank_loop, #p_etank_hloop     ; E-Tank
-    dw $89A9, $0005, $0000, $0001, $0000, $0000, #p_missile_loop, #p_missile_hloop ; Missiles
-    dw $89D2, $0005, $0000, $0002, $0000, $0000, #p_super_loop, #p_super_hloop     ; Super Missiles
-    dw $89FB, $0005, $0000, $0003, $0000, $0000, #p_pb_loop, #p_pb_hloop           ; Power Bombs
-        
-    dw $88F3, $1000, $0013, $0004, $0000, $0000, $0000, $0000      ; Bombs
-    dw $88B0, $1000, $000E, $0005, $0000, $0000, $0000, $0000      ; Charge beam
-    dw $88B0, $0002, $000F, $0005, $0000, $0000, $0000, $0000      ; Ice beam
-    dw $88F3, $0100, $000B, $0004, $0000, $0000, $0000, $0000      ; Hi-jump
-    dw $88F3, $2000, $000D, $0004, $0000, $0000, $0000, $0000      ; Speed booster
-    dw $88B0, $0001, $0010, $0005, $0000, $0000, $0000, $0000      ; Wave beam
-    dw $88B0, $0004, $0011, $0005, $0000, $0000, $0000, $0000      ; Spazer
-    dw $88F3, $0002, $0008, $0004, $0000, $0000, $0000, $0000      ; Spring ball
-    dw $88F3, $0001, $0007, $0004, $0000, $0000, $0000, $0000      ; Varia suit
-    dw $88F3, $0020, $001A, $0004, $0000, $0000, $0000, $0000      ; Gravity suit
-    dw $8941, $8000, $0000, $0004, $0000, $0000, $0000, $0000      ; X-ray scope
-    dw $88B0, $0008, $0012, $0005, $0000, $0000, $0000, $0000      ; Plasma
-    dw $891A, $4000, $0000, $0004, $0000, $0000, $0000, $0000      ; Grapple
-    dw $88F3, $0200, $000C, $0004, $0000, $0000, $0000, $0000      ; Space jump
-    dw $88F3, $0008, $000A, $0004, $0000, $0000, $0000, $0000      ; Screw attack
-    dw $88F3, $0004, $0009, $0004, $0000, $0000, $0000, $0000      ; Morph ball
-    dw $8986, $0064, $0000, $0006, $0000, $0000, $0000, $0000      ; Reserve tank
-    dw $88F3, $0004, $0009, $0004, $0000, $0000, $0000, $0000      ; off-world progression item
-    dw $88F3, $0004, $0009, $0004, $0000, $0000, $0000, $0000      ; off-world item
+; indexed by 0 <= item id <= 3
+ammo_loop_table:
+    ; PLM instruction sequence pointers:
+    ;   loop sequence,   hidden loop sequence
+    dw #p_etank_loop,   #p_etank_hloop   ; E-Tank
+    dw #p_missile_loop, #p_missile_hloop ; Missiles
+    dw #p_super_loop,   #p_super_hloop   ; Super Missiles
+    dw #p_pb_loop,      #p_pb_hloop      ; Power Bombs
 
 i_visible_item:
     lda #$0006
@@ -219,20 +200,23 @@ i_start_draw_loop:
     ; offworld item:
     lda #$0015              ; item ids over 20 (#$0015 and up) are used to display off-world item names, but the graphics are always either item gfx #$0015 or #$0016
     clc : adc.l rando_item_table+$6, x      ; add one if off-world item isnt progression
+
 .all_items
-    asl #4
-    clc : adc #$000C
-    tax
-    lda sm_item_table, x      ; Load next loop point if available
-    beq .custom_item
+    cmp #$0004
+    bpl .non_looped_item
+    ; item id <= 3:
+    asl #2 ; X =
+    tax    ;     item id * 4
+    lda.l ammo_loop_table, x
     plx : ply
     tay
-    rts
+    rts ; return Y = pointer to next position in PLM instruction sequence
 
-.custom_item
+.non_looped_item
     plx
     ply
     rts
+
 
 i_start_hidden_draw_loop:
     phy : phx
@@ -244,17 +228,19 @@ i_start_hidden_draw_loop:
     ; offworld item:
     lda #$0015              ; item ids over 20 (#$0015 and up) are used to display off-world item names, but the graphics are always either item gfx #$0015 or #$0016
     clc : adc.l rando_item_table+$6, x      ; add one if off-world item isnt progression
+
 .all_items
-    asl #4
-    clc : adc #$000E
-    tax
-    lda sm_item_table, x      ; Load next loop point if available
-    beq .custom_item
+    cmp #$0004
+    bpl .non_looped_item
+    ; item id <= 3:
+    asl #2 ; X =
+    tax    ;     item id * 4
+    lda.l ammo_loop_table+$2,x
     plx : ply
     tay
-    rts
+    rts ; return Y = pointer to next position in PLM instruction sequence
 
-.custom_item
+.non_looped_item
     plx
     ply
     rts
@@ -318,26 +304,22 @@ i_live_pickup:
     jsl i_live_pickup_multiworld
     rts
 
-; Item index to receive in A (any item in this world touched by samus)
+; X = byte offset into sm_item_plm_pickup_sequence_pointers of item to pick up
+; (clobbers Y)
 perform_item_pickup:
-    asl : asl : asl : asl
     phx
-    clc
-    adc #sm_item_table ; A contains pointer to pickup routine from item table
-    tax
+    phb
+    phk : plb ; DB = $84
+    ; sm_item_plm_pickup_sequence_pointers[entry]: ROM data pointer
+    ; in turn...                                   ROM data pointer -> function pointer, function args
+    ; (ROM data pointer's implied bank is bank $84)
+    lda.l sm_item_plm_pickup_sequence_pointers, x
+    tax ; X = ROM data pointer
     tay
-    iny : iny          ; Y points to data to be used in item pickup routine
-    jsr ($0000,x)
+    iny : iny ; Y = points to function args (pointer X + 2 bytes)
+    jsr ($0000,x) ; X is not a function pointer but it points to one
+    plb
     plx
-    rtl
-
-mw_call_receive:
-    phx : phy
-    jsl SETFX
-    lda #$0037
-    jsl $809049 ; play sound
-    ply : plx
-    jsr ($0000,x) ; call $84:x
     rtl
 
 ; new PLM graphics (only 2)
@@ -345,6 +327,13 @@ plm_graphics_entry_offworld_progression_item:
     dw offworld_graphics_data_progression_item : db $00, $00, $00, $00, $00, $00, $00, $00    ; off-world progression item (pointer = $9100)
 plm_graphics_entry_offworld_item:
     dw offworld_graphics_data_item             : db $00, $00, $00, $00, $00, $00, $00, $00    ; off-world item (pointer = $9200)
+
+; function pointer data usable for 'picking up' other players' items (which to SM is just a message box)
+plm_sequence_generic_item_0_bitmask:
+    ; $84:88F3 = generic item pickup function, parameters:
+    ;   #$0000 = do not actually pick up an item
+    ;   #$19 = reserve tank's message box id (will be overriden)
+    dw $88F3, $0000 : db $19
 
 pushpc
 org $899100

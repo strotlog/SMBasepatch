@@ -301,8 +301,10 @@ MISCFX:
 	RTS
 
 SETFX:
+	; cancel music change the next time $82:E118 Play room music track, is called
 	LDA #$0002
 	STA $05D7
+	; get sound effect from memory pointed to by Y
 	LDA $0000,y
 	INY
 	RTL

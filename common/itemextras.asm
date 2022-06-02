@@ -32,6 +32,38 @@ sm_item_graphics:
     dw plm_graphics_entry_offworld_progression_item
     dw plm_graphics_entry_offworld_item
 
+; indexed by 0 <= item id <= 22
+sm_item_plm_pickup_sequence_pointers:
+    ; for each type of item, this list points to a useful sequence of PLM data in bank $84
+    ; for example, the original bank $84 contains: dw $8968, $0100
+    ; this is very useful data to point to for calling the E-Tank pickup function at $84:8968 (note, cannot jsr to a pointer, only to a pointer to a pointer)
+    ; we point to the first byte in this sequence in each case
+    ; $pointer: points to (bank $84 data):
+    ;                          PLM oriented function pointer, [optional word parameter to function], [optional byte parameter to function]
+    dw $E0B6 ; E-Tank:         E-Tank function,               100
+    dw $E0DB ; Missiles:       Missiles function,             5
+    dw $E100 ; Super Missiles: Super Missiles function,       5
+    dw $E125 ; Power Bombs:    Power Bombs function,          5
+    dw $E152 ; Bombs:          generic item function,         item bitmask,                           message box id byte
+    dw $E180 ; Charge beam:    generic beam function,         beam bitmask,                           message box id byte
+    dw $E1AE ; Ice beam:       generic beam function,         beam bitmask,                           message box id byte
+    dw $E1DC ; Hi-jump:        generic item function,         item bitmask,                           message box id byte
+    dw $E20A ; Speed booster:  generic item function,         item bitmask,                           message box id byte
+    dw $E238 ; Wave beam:      generic beam function,         beam bitmask,                           message box id byte
+    dw $E266 ; Spazer:         generic beam function,         beam bitmask,                           message box id byte
+    dw $E294 ; Spring ball:    generic item function,         item bitmask,                           message box id byte
+    dw $E2C8 ; Varia suit:     generic item function,         item bitmask,                           message box id byte
+    dw $E2FD ; Gravity suit:   generic item function,         item bitmask,                           message box id byte
+    dw $E330 ; X-ray scope
+    dw $E35D ; Plasma beam:    generic beam function,         beam bitmask,                           message box id byte
+    dw $E38B ; Grapple
+    dw $E3B8 ; Space jump:     generic item function,         item bitmask,                           message box id byte
+    dw $E3E6 ; Screw attack:   generic item function,         item bitmask,                           message box id byte
+    dw $E414 ; Morph ball:     generic item function,         item bitmask,                           message box id byte
+    dw $E442 ; Reserve tank:   Reserve tank function,         100
+    dw plm_sequence_generic_item_0_bitmask ; off-world progression item: generic item function
+    dw plm_sequence_generic_item_0_bitmask ; off-world item: generic item function
+
 i_item_setup_shared:
     phy : phx
     tyx
