@@ -2,6 +2,7 @@
 
 ; Graphics pointers for items (by item index)
 ; relocatable to any bank
+; indexed by 0 <= item id <= 0n22
 sm_item_graphics:
     ; TODO: do these 4 really point to $7e:0008 etc?
     dw $0008 ; Energy Tank

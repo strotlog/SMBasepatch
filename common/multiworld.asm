@@ -62,7 +62,7 @@ mw_init:
     rtl
 
 ; Write multiworld item message
-; A = item id, X = item index, Y = world id (all 16-bit)
+; A = item id, X = byte offset of item location's row in rando_item_table (ie, location id * 8), Y = world id (all 16-bit)
 mw_write_message:
     pha : phx ; for preserving
     phx : pha ; for pulling into A to write out
@@ -101,7 +101,7 @@ mw_load_sram:
     rtl
 
 ; Display message that we picked up someone elses item
-; X = item id, Y = player id
+; X = item id, Y = world id aka item owner
 mw_display_item_sent:
     stx.b $c1
     sty.b $c3
@@ -126,17 +126,27 @@ mw_receive_item:
     beq .end                 ; skip receiving if its a Nothing item
     cmp #$0017
     beq .end                 ; skip receiving if its a No Energy item
-    asl #4 : tax
+    asl ; X =
+    tax ;     byte offset within sm_item_plm_pickup_sequence_pointers for this item
+    ; sound:
+    lda #$0001 ; sound number
+    sta.b $cc
+    ldy #$00cc ; pointer to sound number
+    phb ; data bank cannot be C0+ since SETFX reads from 0000,y and must access WRAM that way
+    pea $7e7e
+    plb : plb ; DB = $7E
+    jsl SETFX
+    plb ; restore DB
+    lda #$0037
+    jsl $809049 ; play sound #$37, or was it 1, idk TODO document
+    stz.b $cc
+    ; message box:
     lda #$7b49 ; magic number
     sta.b $cc
     lda #$0301 ; item received message box override
     sta.b $ce
-    lda.l #sm_item_table
-    sta.b $ca
-    txa : clc : adc.b $ca : tax
-    stz.b $ca
-    ldy #$00cc
-    jsl mw_call_receive      ; Call original item receive code in bank $84 (we'll eventually read the message box index from $ce)
+    ; X is still the param: byte offset into sm_item_plm_pickup_sequence_pointers per above
+    jsl perform_item_pickup   ; Call original item receive code in bank $84 (we'll eventually read the message box index from $ce)
 .end
     stz.b $ce
     stz.b $cc
@@ -145,6 +155,8 @@ mw_receive_item:
 
 ; from varia endingtotals.asm - copying so we don't depend on code address without a symbol,
 ;                               and in order to save precious room in bank $84 for optional varia decoupling
+; Params:
+;     A:     item location id (aka A parameter to $80:818E)
 ; Returns:
 ;     A/X:   Byte index ([A] >> 3)
 ;     $05E7: Bitmask (1 << ([A] &  7))
@@ -160,11 +172,54 @@ COLLECTTANK:
     RTL
 
 
+; point-in-time documentation of all item interactions (anything involving a message box) june 2022:
+; mw_handle_queue (multiworld.asm) <-- receive item from network
+;    sta $c3
+;    if own item received from network (under remote items config):
+;       COLLECTTANK (copied into multiworld.asm - appears to set item location bit as collected in SRAM)
+;    sta $c1
+;    mw_receive_item (multiworld.asm)
+;       sta $cc, ce
+;       mw_call_receive (items.asm)
+;          SETFX (nofanfare.asm)
+;          $80:9049 play sound
+;          $84:($0000,x) x <-- x = sm_item_table[A].0
+;             ends up in $85:8080 like below (see below for details)
+; 
+;       stz $cc, ce
+;     stz $c1, c3
+; 
+; 
+; all plms' instruction lists (i_live_pickup in items.asm)
+;    i_live_pickup_multiworld (multiworld.asm)
+;       mw_write_message (multiworld.asm) <- network/SRAM, A=item, always
+;       mw_display_item_sent (multiworld.asm) <- message box, only for OTHER players' items
+;          sta $c1, c3, cc, ce
+;          $85:8080 A=message box index
+;             $85:8241 Initialise message box (normally calls into function table)
+;                multiworld_messagebox_function_pointerish_calls (multiworld.asm)
+;                   lda $ce
+;                   PlaceholderBig (multiworld.asm)
+;                       write_placeholders (multiworld.asm)
+;                          lda $c1 $c3
+;                   { $85:8289 small                         }
+;                   {  or                                    }
+;                   { $85:825A large (all multiworld boxes)  }
+;                   both call:
+;                      $85:82B8 Write message tilemap
+;                          hook_tilemap_calc (multiworld.asm)
+;                             lda $ce
+;           stz $c1, c3, cc, ce
+;            - OR just -
+;       perform_item_pickup (items.asm) A=0..21 <- only for SELF items && !(config.remote items) (ie, self item touched + remote items setting = no op other than the 'always' bit above)
+;          $84:($0000,x) <-- x = sm_item_table[A].0
+;              this should end up in $85:8080 as well (see above), but doesn't use multiworld boxes
+
+
 mw_handle_queue: ; receive only
     pha : phx
 
 .loop
-
     lda.l !SRAM_MW_ITEMS_RECV_RPTR
     cmp.l !SRAM_MW_ITEMS_RECV_WPTR
     beq .end
@@ -176,26 +231,48 @@ mw_handle_queue: ; receive only
     sta.b $c1
     lda.l config_remote_items
     bit #$0002
-    beq +
+    beq .perform_receive
     lda.b $c1
     and #$FF00
     cmp #$FF00
-    beq +
+    beq .perform_receive
     lsr #8
 
-    ; save remote item as collected
+    ; check that item has not already been collected
+    ; A = item location id
     phx
-    jsl COLLECTTANK
+    pha
+    jsl $80818E ; $80:818E: Change bit index to byte index and bitmask
+    ; X:        item byte
+    ; $7e:05e7: item bit (mask)
     lda $7ed870, X
-    ora $7e05e7 ; read and or the bit output of $80:818E (called by COLLECTTANK)
+    and.l $7e05e7 ; check if item bit was already collected
+    beq .new_remote_item
+    ; item location collection bit is already set (this happens when our own game touched the item)
+    pla
+    plx
+    bra .next
+
+.new_remote_item
+    ; item not yet collected:
+    ; save remote item as collected
+    pla ; A = item location id
+    jsl COLLECTTANK
+    ; X:        item byte
+    ; $7e:05e7: item bit (mask)
+    lda $7ed870, X ; re-load item collection array byte
+    ora.l $7e05e7 ; set this location's bit to '1' (collected)
     sta $7ed870, X
     plx
-+
+    ; now show message box
+
+.perform_receive
     lda.b $c1
     and #$00FF
     sta.b $c1
     jsr mw_receive_item
 
+.next
     lda.l !SRAM_MW_ITEMS_RECV_RPTR
     inc a
     sta.l !SRAM_MW_ITEMS_RECV_RPTR
@@ -209,10 +286,10 @@ mw_handle_queue: ; receive only
     rts
 
 
-i_live_pickup_multiworld:
+i_live_pickup_multiworld: ; touch PLM code
     phx : phy : php
-    lda.l $1dc7, x              ; Load PLM room argument
-    asl #3 : tax
+    lda.l $1dc7, x              ; Load PLM room argument (item location id)
+    asl #3 : tax                ; index by item location id into rando_item_table (entry size 8 bytes)
 
     lda.l rando_item_table+$4, x    ; Load item owner into Y
     tay
@@ -220,29 +297,28 @@ i_live_pickup_multiworld:
     cmp #$0015
     bmi .local_item_or_offworld
     ; off-world item:
-    lda #$0015              ; ids over 20 are only used to display off-world item names
+    lda #$0015              ; ids over 0n20 are only used to display off-world item names
 .local_item_or_offworld
-    ; params: A = item id, X = item index, Y = world id (all 16-bit)
-    jsl mw_write_message            ; Send message
+    ; params: A = item id, X = byte offset of item location's row in rando_item_table (ie, location id * 8), Y = world id aka item owner (all 16-bit)
+    jsl mw_write_message       ; Send message over network/SRAM
     lda.l rando_item_table, x  ; Load item type
     beq .own_item
     ; type of item == #$0001: other player's item:
     lda.l rando_item_table+$2, x    ; Load original item id again, we'll then put it into X this time
     tax
-    ; params: X = item id, Y = player id
+    ; params: X = item id, Y = world id aka item owner
     jsl mw_display_item_sent     ; Display custom message box
     bra .end
 
 .own_item
-    lda.l config_remote_items
-    and #$0002
-    bne .end
-
     lda.l rando_item_table+$2, x ; Load item id
     cmp #$0015
-    bmi .local_item1
-    lda #$0015              ; ids over 20 are only used to display off-world item names
-.local_item1
+    bmi .own_item1
+    lda #$0014              ; self item id >= 0n21 should never happen... but just call it a reserve tank (0n20) to avoid a crash
+.own_item1
+    ; param X = byte offset of item data within sm_item_plm_pickup_sequence_pointers for this item
+    asl
+    tax
     jsl perform_item_pickup
     bra .end
 
@@ -513,7 +589,7 @@ PlaceholderBig:
 
 multiworld_messagebox_function_pointerish_calls:
     pha
-    lda.b $cc     ; if $cc and $ce are set, they overrides the message box
+    lda.b $cc     ; if $cc and $ce are set, they override the message box
     cmp #$7b49 ; magic number
     bne .vanilla
     lda.b $ce
