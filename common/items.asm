@@ -352,12 +352,3 @@ perform_item_pickup:
     jsr ($0000,x)
     plx
     rtl
-
-mw_call_receive:
-    phx : phy
-    jsl SETFX
-    lda #$0037
-    jsl $809049 ; play sound
-    ply : plx
-    jsr ($0000,x) ; call $84:x
-    rtl

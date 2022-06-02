@@ -2,6 +2,7 @@
 
 ; Graphics pointers for items (by item index)
 ; relocatable to any bank
+; indexed by 0 <= item id <= 0n22
 sm_item_graphics:
     ; highest bit clear means this item type's gfx is always loaded already,
     ; and the value is an item gfx index that can be stored directly at $7e:df0c,x
