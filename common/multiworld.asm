@@ -231,11 +231,14 @@ mw_handle_queue: ; receive only
     sta.b $c1
     lda.l config_remote_items
     bit #$0002
-    beq .perform_receive
+    beq .perform_receive ; config_remote_items == 0, so the network gives us items found in other worlds only
+    lda.b $c3
+    cmp.l config_player_id
+    bne .perform_receive ; item came from a different player than ourselves, do regular receive
     lda.b $c1
     and #$FF00
     cmp #$FF00
-    beq .perform_receive
+    beq .perform_receive ; item location == FF (TODO: meaning what? maybe this is never used anyway & is old debug code?)
     lsr #8
 
     ; check that item has not already been collected
@@ -254,7 +257,7 @@ mw_handle_queue: ; receive only
     bra .next
 
 .new_remote_item
-    ; item not yet collected:
+    ; our item, but not locally collected:
     ; save remote item as collected
     pla ; A = item location id
     jsl COLLECTTANK
