@@ -123,9 +123,9 @@ mw_display_item_sent:
 mw_receive_item:
     pha : phx
     cmp #$0016
-    beq .end                 ; skip receiving if its a Nothing item
+    beq .end                 ; skip receiving if its a Nothing item (#$0016 might also mean offworld progression item? which should be skipped too)
     cmp #$0017
-    beq .end                 ; skip receiving if its a No Energy item
+    beq .end                 ; skip receiving if its a No Energy item (#$0017 might also mean offworld non-prog item? which should be skipped too)
     asl ; X =
     tax ;     byte offset within sm_item_plm_pickup_sequence_pointers for this item
     ; sound:
@@ -227,17 +227,22 @@ mw_handle_queue: ; receive only
     beq .end
 
     asl #2 : tax
+    ; X = offset in buffer of next new message to process, bytes of which are:
+    ; [source player id.hi, source player id.lo, SM item type, location id where item was found]
     lda.l !SRAM_MW_ITEMS_RECV, x
     sta.b $c3
     lda.l !SRAM_MW_ITEMS_RECV+$2, x
     sta.b $c1
     lda.l config_remote_items
     bit #$0002
-    beq .perform_receive
+    beq .perform_receive ; config_remote_items == 0, so the network gives us items found in other worlds only
+    lda.b $c3
+    cmp.l config_player_id
+    bne .perform_receive ; item came from a different player than ourselves, so location id is irrelevant, do regular receive
     lda.b $c1
-    and #$FF00
-    cmp #$FF00
-    beq .perform_receive
+    and #$FF00 ; though there are many invalid item locations (156/256), item location == 0xFF specifically means that
+    cmp #$FF00 ;  the true item location would be invalid in this world or not apply to this world, for marking as collected.
+    beq .perform_receive ; location FF -> branch
     lsr #8
 
     ; check that item has not already been collected
@@ -256,7 +261,7 @@ mw_handle_queue: ; receive only
     bra .next
 
 .new_remote_item
-    ; item not yet collected:
+    ; our item, but not locally collected:
     ; save remote item as collected
     pla ; A = item location id
     jsl COLLECTTANK

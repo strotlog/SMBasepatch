@@ -7,6 +7,8 @@
 ; Owner = Owner of this item in a multiworld scenario
 ; Reserved = value is added to ItemID clamped at 21 if its higher than 20 to show proper item sprite 
 ; (progression or not) while keeping the index for displaying item name
+;
+; indexed by item location id
 
 rando_item_table:
 	dw $0000, $0001, $0000, $0000 ; 0 - Power Bomb (Crateria surface)
@@ -264,7 +266,7 @@ rando_item_table:
 	dw $0000, $0001, $0000, $0000 ; 252 - Unused
 	dw $0000, $0001, $0000, $0000 ; 253 - Unused
 	dw $0000, $0001, $0000, $0000 ; 254 - Unused
-	dw $0000, $0001, $0000, $0000 ; 255 - Unused
+	dw $0000, $0001, $0000, $0000 ; 255 - Unused - never valid due to special mw receive meaning of location id == 0xFF
 	dw $0000, $0001, $0000, $0000 ; 256 - Unused
 	dw $0000, $0001, $0000, $0000 ; 257 - Unused
 	dw $0000, $0001, $0000, $0000 ; 258 - Unused
