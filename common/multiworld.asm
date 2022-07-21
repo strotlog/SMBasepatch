@@ -542,10 +542,13 @@ write_placeholders:
 
     plb ; restore previous DB
     lda.b $c3                 ; Load player 1
+    ; this is archipelago's player id (max 65535), relative to the current multiworld, of the player involved,
+    ; which we must now translate to the local ROM-specific player id (max 201 to save space) to get their name.
+    ; search our list of player IDs for this value
     ldx #$0000
 .loop
-    cpx #$0190              ; 200 entries
-    beq .notfound
+    cpx #(rando_player_id_table_end-rando_player_id_table)   ; check for end of table
+    bpl .notfound
     inx #2   
     cmp.l rando_player_id_table-$2, x
     bne .loop
