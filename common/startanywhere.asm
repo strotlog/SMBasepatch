@@ -52,7 +52,7 @@ inject_savestation:
                  
     lda.l #startroom_save_plm
     tax
-    lda.l $7e0000, x
+    lda.l $8f0000, x   ; (rom PLM room population definitions are always in bank $8f)
     jsl $84846a  ; create PLM
 
 .end
