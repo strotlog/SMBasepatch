@@ -1,3 +1,4 @@
+; note: also works for otherRotation in addition to Super Metroid: Rotation
 lorom
 
 macro a8()
