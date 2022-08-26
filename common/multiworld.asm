@@ -1,17 +1,82 @@
 ; SM Multiworld support
 ;
 
-; New multiworld communication stuff
-!SRAM_MW_ITEMS_RECV = $702000
-!SRAM_MW_ITEMS_RECV_RPTR = $702600
-!SRAM_MW_ITEMS_RECV_WPTR = $702602
-!SRAM_MW_ITEMS_RECV_SPTR = $702604  ; This gets updated on game save and reloaded into RPTR on game load
+; SRAM map for SRAM space newly created by doubling SRAM size:
 
-!SRAM_MW_ITEMS_SENT_RPTR = $702680
-!SRAM_MW_ITEMS_SENT_WPTR = $702682
-!SRAM_MW_ITEMS_SENT = $702700       ; [worldId, itemId, itemIndex] (need unique item index to prevent duping)
+; $70:2000 }
+; ...      } Item receive queue. 8 bytes per entry
+; $70:25FF }
 
-!SRAM_MW_INITIALIZED = $7026fe
+; $70:2600: unused; formerly RPTR aka RCOUNT for item receive queue, & was moved to RAM that gets saved at save stations
+; $70:2602: WCOUNT (elements written count) for item receive queue
+
+; $70:2604 }
+; ...      } unused
+; $70:267F }
+
+; $70:2680: RCOUNT (elements read count) for item send queue
+; $70:2682: WCOUNT (elements written count) for item send queue
+
+; $70:2684 }
+; ...      } unused
+; $70:26FF }
+
+; $70:2700 }
+; ...      } Item send queue (not actually a very fixed size if player keeps reloading and picking up the same item)
+; $70:2AFF } 8 bytes per entry
+
+; $70:2B00 }
+; ...      } unused
+; $70:2FFF }
+
+; $70:3000 (0n21 bytes): "Super Metroid        " (ASCII, no null terminator)
+; $70:3015 (0n21 bytes): copy of ROM title
+
+; $70:302a }
+; ...      } reserved for future data about game variations and software versions
+; $70:305f }
+
+; $70:3060 (4 bytes): multiworld's copy of VARIA seed number ($df:ff00), used for detecting the need to clear all data
+;                                                                  above $70:2000 when a new multiworld seed is loaded
+; $70:3064 (2 bytes): SRAM_MW_INITIALIZED (#$cafe when initialized)
+
+; $70:3064 }
+; ...      } unused
+; $70:306F }
+
+; $70:3070 }
+; ...      } copy of multiworld ROM config data $CE:FF00 onward (only first several bytes used, rest is reserved)
+; $70:316F }
+
+
+!SRAM_MW_ITEMS_RECV = $702000 ; RECV queue buffer
+!SRAM_MW_ITEMS_RECV_WCOUNT = $702602
+
+; This location is always saved to the current slot's data in SRAM on save, and loaded from SRAM slot on load.
+; This takes the place of a global SRAM_MW_ITEM_RECV_RCOUNT, since different saves may have processed different amounts
+; of the receive queue.
+; For example, when Samus takes a death and reloads, this value is rolled back to the queue read position from the time
+; of the last save. Samus's items are rolled back to that point in time as well; thus acquisitions queued after the
+; save happened are re-processed correctly out of the queue and shown as message boxes on reload.
+; Uses unused bits at the end of the end of the array of bits representing item locations acquired.
+!ReceiveQueueCompletedCount_InRamThatGetsSavedToSaveSlot = $7ed8ae
+
+!SRAM_MW_ITEMS_SENT_RCOUNT = $702680
+!SRAM_MW_ITEMS_SENT_WCOUNT = $702682
+!SRAM_MW_ITEMS_SENT = $702700    ; SENT queue buffer. [worldId, itemId, itemIndex] (need unique item index to prevent duping)
+
+!SRAM_MW_SM = $703000
+!SRAM_MW_ROMTITLE = $703015
+!SRAM_MW_SEEDINT = $703060
+!SRAM_MW_INITIALIZED = $703064
+
+!SRAM_MW_CONFIG_ENABLED = $703070
+!SRAM_MW_CONFIG_CUSTOM_SPRITE = $703072
+!SRAM_MW_CONFIG_DEATHLINK = $703074
+!SRAM_MW_CONFIG_REMOTE_ITEMS = $703076
+!SRAM_MW_CONFIG_PLAYER_ID = $703078
+
+!varia_seedint_location = $dfff00
 
 !Big = #$825A
 !Small = #$8289
@@ -40,33 +105,181 @@ mw_init:
     ; If already initialized, don't do it again
     lda.l !SRAM_MW_INITIALIZED
     cmp #$cafe
-    beq .end
+    bne .reset_sram
+    lda.l !varia_seedint_location
+    cmp.l !SRAM_MW_SEEDINT
+    bne .reset_sram
+    lda.l !varia_seedint_location+2
+    cmp.l !SRAM_MW_SEEDINT+2
+    bne .reset_sram
+    ; always copy config from ROM to SRAM, in case a player wants to hex edit a change to their config within 1 seed
+    jsl copy_config_to_sram
+    jmp .end
 
+.reset_sram
+    phb
     lda #$0000
-    ldx #$0000
+    ldx #$2000
+    ldy #$2000
+    pea $7070
+    plb
+    plb ; $DB (data bank register) = $70 (first bank of SRAM)
+    jsl write_repeated_memory ; zero out $70:2000 - $70:3fff
+    plb
 
--
-    sta.l !SRAM_MW_ITEMS_RECV, x
-    sta.l !SRAM_MW_ITEMS_RECV+$0400, x
-    sta.l !SRAM_MW_ITEMS_RECV+$0800, x
-    sta.l !SRAM_MW_ITEMS_RECV+$0C00, x
-    inx : inx
-    cpx #$0400
-    bne -
+    bra .continuereset
+.smstringdata
+    db "Super Metroid        "
+.continuereset
+    sep #$20
+    phk
+    pla
+    sta.b $02
+    lda #$70
+    sta.b $05
+    rep #$20
+    lda #(.smstringdata) ; copy from $(current program bank):.data in this function
+    sta.b $00
+    ldy #$0015 ; 0n15 bytes
+    lda #(!SRAM_MW_SM) ; copy to SRAM_MW_SM
+    sta.b $03
+    jsl copy_memory
+
+    sep #$20
+    lda #$80
+    sta.b $02
+    lda #$70
+    sta.b $05
+    rep #$20
+    lda #$ffc0 ; copy from $80:ffc0 (ROM title)
+    sta.b $00
+    ldy #$0015 ; 0n15 bytes
+    lda #(!SRAM_MW_ROMTITLE) ; copy to SRAM_MW_ROMTITLE
+    sta.b $03
+    jsl copy_memory
 
     lda #$cafe
     sta.l !SRAM_MW_INITIALIZED
+    lda.l !varia_seedint_location
+    sta.l !SRAM_MW_SEEDINT
+    lda.l !varia_seedint_location+2
+    sta.l !SRAM_MW_SEEDINT+2
+
+    jsl copy_config_to_sram
+
+    ; lastly, delete the saves by writing a number and something other than its own inverse to the checksum locations
+    ; note: since out of all the vanilla SRAM range $70:0000 - $70:1fff, below is the only location we write, multiworld
+    ;       should remain compatible both with VARIA changes and with various romhacks, such as romhacks using
+    ;       https://metroidconstruction.com/resource.php?id=285 save/load patch with simpler ingame map tooling - this
+    ;       patch increases the size of each save file within the first 0x2000 bytes, but we never write directly to
+    ;       those slots, so we're safe.
+    lda #$bad0
+    ldx #$0010
+-
+    dex
+    dex
+    sta $700000,x
+    sta $701ff0,x
+    bne -
+
+    ; last location to write, and it is also within $70:0000 - $70:1fff: if we're on an old (pre-Sep 2021) version of
+    ; VARIA, it doesn't check against the seed but against a fixed value that it always writes (#$cacacaca). if it's not
+    ; there at boot, VARIA resets its custom SRAM areas.
+    ; unfortunately, VARIA's global SRAM data does fall into the range used by some romhacks' save/load patch mentioned
+    ; above. so we want to be careful/sure.
+    ; unfortunately part 2, our boot hook comes after VARIA's, so VARIA has already decided whether or not to reset its
+    ; SRAM. so we add an extra delete-all-saves step here, acting like pre-Sep 2021 VARIA rando's SRAM reset, if we're
+    ; sure that we're on a pre-Sep 2021 VARIA rando.
+    ; later versions of VARIA will detect the seed mismatch on their own: if we update to such later versions, then our
+    ; modifications within the $70:0000 - $70:1fff range (our clearing of the checksums) will be needed only for
+    ; romhacks' sake at that point, and the following check-and-write can be removed.
+    lda $701dfc
+    cmp #$caca
+    bne .end
+    lda $701dfe
+    cmp #$caca
+    bne .end
+    ; here we are definitely under a pre-Sep 2021 VARIA that just ran boot code, and the VARIA code may or may not have
+    ; just cleared its global SRAM values. but we know it's safe to clear since we know the seed changed.
+    ; clear 2 key global VARIA values.
+    ; VARIA will then ignore any other initial SRAM data since it is contained in invalid save slots.
+    lda #$0000
+    sta $701df8 ; used_slots_mask = 0
+    sta $701dfa ; last_saveslot = 0
 
 .end
     plp : ply : plx : pla
     rtl
+
+
+; Write [Y] bytes of [A] to $DB:0000 + [X] - 16 bit
+; Must be rep #$30
+; Clobbers X and Y
+write_repeated_memory:
+    pha
+    tya
+    lsr a
+    tay
+    pla
+.loop
+    sta.w $0000,x
+    inx
+    inx
+    dey
+    bne .loop
+
+    rtl
+
+
+; Copy [Y] bytes from [$00] to [$03] (indirect)
+; Must be rep #$10 (#$20 bit ignored)
+; Clobbers A and Y
+copy_memory:
+    php
+    tya
+    lsr a
+    bcc .even
+    ; y is odd; copy last byte to make it even
+    sep #$20
+    dey
+    lda [$00],y
+    sta [$03],y
+.even
+    rep #$20
+    dey
+    dey
+    bmi .done
+.loop
+    lda [$00],y
+    sta [$03],y
+    dey
+    dey
+    bpl .loop
+.done
+    plp
+    rtl
+
+
+copy_config_to_sram:
+    lda.l config_multiworld
+    sta.l !SRAM_MW_CONFIG_ENABLED
+    lda.l config_sprite
+    sta.l !SRAM_MW_CONFIG_CUSTOM_SPRITE
+    lda.l config_deathlink
+    sta.l !SRAM_MW_CONFIG_DEATHLINK
+    lda.l config_remote_items
+    sta.l !SRAM_MW_CONFIG_REMOTE_ITEMS
+    lda.l config_player_id
+    sta.l !SRAM_MW_CONFIG_PLAYER_ID
+    rtl
+
 
 ; Write multiworld item message
 ; A = item id, X = byte offset of item location's row in rando_item_table (ie, location id * 8), Y = world id (all 16-bit)
 mw_write_message:
     pha : phx ; for preserving
     phx : pha ; for pulling into A to write out
-    lda.l !SRAM_MW_ITEMS_SENT_WPTR
+    lda.l !SRAM_MW_ITEMS_SENT_WCOUNT
     asl #3 : tax
     tya
     sta.l !SRAM_MW_ITEMS_SENT, x
@@ -75,30 +288,45 @@ mw_write_message:
     pla
     sta.l !SRAM_MW_ITEMS_SENT+$4, x
 
-    lda.l !SRAM_MW_ITEMS_SENT_WPTR
+    lda.l !SRAM_MW_ITEMS_SENT_WCOUNT
     inc a
-    sta.l !SRAM_MW_ITEMS_SENT_WPTR
+    sta.l !SRAM_MW_ITEMS_SENT_WCOUNT
     plx : pla
     rtl
 
+
 mw_save_sram:
+    ; runs just before RAM -> SRAM save
     pha : php
     %ai16()
-    lda.l !SRAM_MW_ITEMS_RECV_RPTR
-    sta.l !SRAM_MW_ITEMS_RECV_SPTR
+    ; no-op. actions would go here
     plp : pla
     ; restore overwritten instructions
     tax
     ldy #$0000
     rtl
 
+
 mw_load_sram:
+    ; runs just after SRAM -> RAM load complete
     pha : php
     %ai16()
-    lda.l !SRAM_MW_ITEMS_RECV_SPTR
-    sta.l !SRAM_MW_ITEMS_RECV_RPTR
+    lda.l !SRAM_MW_ITEMS_RECV_WCOUNT
+    cmp.l !ReceiveQueueCompletedCount_InRamThatGetsSavedToSaveSlot
+    bmi .setnewgame
+.done
     plp : pla
     rtl
+.setnewgame
+    ; this means ReceiveQueueCompletedCount_InRamThatGetsSavedToSaveSlot > SRAM_MW_ITEMS_RECV_WCOUNT.
+    ; this is an invalid state where we've supposedly read deeper into the queue than the max amount of data it's had.
+    ; the cause is that we auto-cleared the SRAM over $70:2000, including the whole queue, when a new seed was loaded,
+    ; but perhaps VARIA rando is not around to similarly auto-clear the save slot data, where the read pointer lives.
+    ; let's assume *if* any items are really in the queue, they have already been processed, and make ready to process
+    ; the next thing to come in. more than likely, it's 0.
+    sta.l !ReceiveQueueCompletedCount_InRamThatGetsSavedToSaveSlot
+    bra .done
+
 
 ; Display message that we picked up someone elses item
 ; X = item id, Y = world id aka item owner
@@ -222,8 +450,8 @@ mw_handle_queue: ; receive only
     pha : phx
 
 .loop
-    lda.l !SRAM_MW_ITEMS_RECV_RPTR
-    cmp.l !SRAM_MW_ITEMS_RECV_WPTR
+    lda.l !ReceiveQueueCompletedCount_InRamThatGetsSavedToSaveSlot 
+    cmp.l !SRAM_MW_ITEMS_RECV_WCOUNT
     beq .end
 
     asl #2 : tax
@@ -280,9 +508,9 @@ mw_handle_queue: ; receive only
     jsr mw_receive_item
 
 .next
-    lda.l !SRAM_MW_ITEMS_RECV_RPTR
+    lda.l !ReceiveQueueCompletedCount_InRamThatGetsSavedToSaveSlot 
     inc a
-    sta.l !SRAM_MW_ITEMS_RECV_RPTR
+    sta.l !ReceiveQueueCompletedCount_InRamThatGetsSavedToSaveSlot 
 
     bra .loop
 
@@ -346,9 +574,6 @@ mw_hook_main_game:
     rtl
 
 patch_load_multiworld:
-    lda $7e0952
-    clc
-    adc #$0010
     jsl mw_load_sram
     ; restore overwritten & skipped instructions
     ply
