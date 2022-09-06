@@ -45,12 +45,15 @@ incsrc ../common/nofanfare.asm
 ; incsrc startanywhere.asm
 
 ; Add code to the main code bank
-org $b88000
+; had to move this from original place ($b88000) since it conflicts with VariaRandomizer's web tracker race protection 
+; $b88200 to $b88220
+org $b88300
 incsrc ../common/multiworld.asm
 org $b88800
 incsrc ../common/itemextras.asm
 
-org $84f870                               ; lordlou: had to move this from original place ($84efe0) since it conflicts with VariaRandomizer's beam_doors_plms patch
+; had to move this from original place ($84efe0) since it conflicts with VariaRandomizer's beam_doors_plms patch
+org $84f870
 incsrc ../common/items.asm
 
 org $b8cf00
