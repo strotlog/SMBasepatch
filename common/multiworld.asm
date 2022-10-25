@@ -4,7 +4,7 @@
 ; SRAM map for SRAM space newly created by doubling SRAM size:
 
 ; $70:2000 }
-; ...      } Item receive queue. 8 bytes per entry
+; ...      } Item receive queue. 4 bytes per entry
 ; $70:25FF }
 
 ; $70:2600: unused; formerly RPTR aka RCOUNT for item receive queue, & was moved to RAM that gets saved at save stations
@@ -275,18 +275,21 @@ copy_config_to_sram:
 
 
 ; Write multiworld item message
-; A = item id, X = byte offset of item location's row in rando_item_table (ie, location id * 8), Y = world id (all 16-bit)
+; Params (all 16-bit):
+;   A = Item Id
+;   X = byte offset of item location's row in rando_item_table (ie, location id * 8)
+;   Y = world id aka archipelago player id to send to
 mw_write_message:
     pha : phx ; for preserving
     phx : pha ; for pulling into A to write out
     lda.l !SRAM_MW_ITEMS_SENT_WCOUNT
     asl #3 : tax
-    tya
-    sta.l !SRAM_MW_ITEMS_SENT, x
+    tya                              ; }
+    sta.l !SRAM_MW_ITEMS_SENT, x     ; } these (from params Y and A) are actually ignored by the client.
+    pla                              ; } same for the unwritten bytes 6-7
+    sta.l !SRAM_MW_ITEMS_SENT+$2, x  ; }
     pla
-    sta.l !SRAM_MW_ITEMS_SENT+$2, x
-    pla
-    sta.l !SRAM_MW_ITEMS_SENT+$4, x
+    sta.l !SRAM_MW_ITEMS_SENT+$4, x ; write location id * 8. client will divide to get location id
 
     lda.l !SRAM_MW_ITEMS_SENT_WCOUNT
     inc a
@@ -329,7 +332,7 @@ mw_load_sram:
 
 
 ; Display message that we picked up someone elses item
-; X = item id, Y = world id aka item owner
+; X = item id, Y = Other Player Index
 mw_display_item_sent:
     stx.b $c1
     sty.b $c3
@@ -339,8 +342,27 @@ mw_display_item_sent:
     sta.b $cc
     lda #$0300 ; item sent message box override
     sta.b $ce
-    lda #$0019 ; param to function: message box id of something fake but known. 19h = reserve tank. will be overridden by $ce
+    lda #$0019 ; param to function: message box id of something fake but known. 19h = reserve tank vanilla message box id. will be overridden by $ce
     jsl $858080
+    stz.b $c1
+    stz.b $c3
+    stz.b $cc
+    stz.b $ce
+    rtl
+
+; Prepare overrides for displaying that we picked up an item link item
+; X = item id, Y = Other Player Index
+mw_prep_item_link_messagebox:
+    stx.b $c1
+    sty.b $c3
+    lda #$7b49 ; magic number
+    sta.b $cc
+    lda #$0302 ; item link message box override
+    sta.b $ce
+    lda #$0019 ; param to function: message box id of something fake but known. 19h = reserve tank vanilla message box id. will be overridden by $ce
+    rtl
+
+mw_cleanup_item_link_messagebox:
     stz.b $c1
     stz.b $c3
     stz.b $cc
@@ -400,7 +422,7 @@ COLLECTTANK:
     RTL
 
 
-; point-in-time documentation of all item interactions (anything involving a message box) june 2022:
+; point-in-time documentation of all item interactions (anything involving a message box) october 2022:
 ; mw_handle_queue (multiworld.asm) <-- receive item from network
 ;    sta $c3
 ;    if own item received from network (under remote items config) && location is not already marked collected:
@@ -421,7 +443,7 @@ COLLECTTANK:
 ; 
 ; all plms' instruction lists (i_live_pickup in items.asm)
 ;    i_live_pickup_multiworld (multiworld.asm)
-;       mw_write_message (multiworld.asm) <- to SRAM/network, A=item, always performed
+;       mw_write_message (multiworld.asm) <- to SRAM/network, X=itemloc*8, always performed
 ;       if we touched ANOTHER player's item:
 ;          mw_display_item_sent (multiworld.asm) <- show message box for other player's items
 ;             sta $c1, c3, cc, ce
@@ -440,6 +462,9 @@ COLLECTTANK:
 ;                             hook_tilemap_calc (multiworld.asm)
 ;                                lda $ce
 ;              stz $c1, c3, cc, ce
+;       if we touched an item link item that includes ourselves:
+;          hybrid approach: override message box like mw_display_item_sent does, but show it via perform_item_pickup,
+;          which picks up the item
 ;       else - ie - we are picking up our OWN item within our world:
 ;          perform_item_pickup (items.asm) A=0..20
 ;             $84:($0000,x) <-- x = sm_item_table[A].0
@@ -452,29 +477,48 @@ mw_handle_queue: ; receive only
 .loop
     lda.l !ReceiveQueueCompletedCount_InRamThatGetsSavedToSaveSlot 
     cmp.l !SRAM_MW_ITEMS_RECV_WCOUNT
-    beq .end
+    bne .lookup_player
+    brl .end
 
+.lookup_player
     asl #2 : tax
     ; X = offset in buffer of next new message to process, bytes of which are:
-    ; [source player id.hi, source player id.lo, SM item type, location id where item was found]
+    ; [source player id.lo, source player id.hi, SM item type, location id where item was found]
     lda.l !SRAM_MW_ITEMS_RECV, x
-    sta.b $c3
+    jsl ap_playerid_to_rom_other_player_index
+    bcs .found
+    lda #$0000 ; should not happen. but receive from "Archipelago" player if not found
+.found
+    sta.b $c3 ; Other Player Index (in case we spawn a message box)
     lda.l !SRAM_MW_ITEMS_RECV+$2, x
     sta.b $c1
+    lda.l !SRAM_MW_ITEMS_RECV, x
+    cmp.l config_player_id
+    bne .perform_receive
+    ; receiving item from self. should be due to remote items AND/OR item link
+    ; (sender id is never the item link id, it's the player who actually had the item placed in their world--in this
+    ;  path, also us.)
+    lda.b $c1
+    xba
+    and #$00FF ; A = source location id
+    cmp #$00FF
+    beq .perform_receive ; location FF -> branch. FF is special location code meaning "N/A", don't treat as a location
+    ; if (remote items disabled && self item location does NOT send to an item link that includes self), .perform_receive
+    phx
+    asl #3
+    tax
+    lda.l rando_item_table, x ; load Item Destination Type for the source location of the item we're receiving
+    plx
+    cmp #$0002
+    beq .collect_item_if_present
     lda.l config_remote_items
     bit #$0002
-    beq .perform_receive ; config_remote_items == 0, so the network gives us items found in other worlds only
-    lda.b $c3
-    cmp.l config_player_id
-    bne .perform_receive ; item came from a different player than ourselves, so location id is irrelevant, do regular receive
-    lda.b $c1
-    and #$FF00 ; though there are many invalid item locations (156/256), item location == 0xFF specifically means that
-    cmp #$FF00 ;  the true item location would be invalid in this world or not apply to this world, for marking as collected.
-    beq .perform_receive ; location FF -> branch
-    lsr #8
+    beq .perform_receive
 
-    ; check that item has not already been collected
-    ; A = item location id
+.collect_item_if_present
+    lda.b $c1
+    xba
+    and #$00FF ; A = source location id
     phx
     pha
     jsl $80818E ; $80:818E: Change bit index to byte index and bitmask
@@ -496,8 +540,8 @@ mw_handle_queue: ; receive only
     ; X:        item byte
     ; $7e:05e7: item bit (mask)
     lda $7ed870, X ; re-load item collection array byte
-    ora.l $7e05e7 ; set this location's bit to '1' (collected)
-    sta $7ed870, X
+    ora.l $7e05e7  ; } set this location's bit to '1' (collected)
+    sta $7ed870, X ; }
     plx
     ; now show message box
 
@@ -512,7 +556,7 @@ mw_handle_queue: ; receive only
     inc a
     sta.l !ReceiveQueueCompletedCount_InRamThatGetsSavedToSaveSlot 
 
-    bra .loop
+    brl .loop
 
 .end
     stz.b $c1
@@ -521,40 +565,137 @@ mw_handle_queue: ; receive only
     rts
 
 
+; param: A: archipelago playerid to search for
+; return value: A: Other Player Index (carry is set)
+;               else carry is cleared if not found
+ap_playerid_to_rom_other_player_index:
+    ; entry [0] should always be id 0 and name "Archipelago", special-case it
+    cmp #$0000
+    bne .do_search_stage_1
+    rtl ; return id 0 -> idx 0
+.do_search_stage_1
+    ; search our whole list of sorted AP player IDs for the value in A.
+    ; list ends with zeroes which we don't care about for this purpose and have already ruled out.
+    ; going down an entire list of 202 unique players would take something like ~6% of an frame,
+    ; so we try to optimize this slightly with an O(sqrt(n)) algorithm (rather than O(n)):
+    ; - pretend rando_player_id_table is 14 columns wide (thus about 14.4 rows) and find the correct row first
+    sta.b $00
+    phx
+    ; skip first table entry (id 0, name "Archipelago", already checked).
+    ; start rows at [1, 17, 33, ...] instead of [0, 16, 32, ...]
+    ; that way if we hit another id 0, we know it's the end
+    ldx #$0002
+    ; move forward 0n14 entries (0x1c bytes) until we've gone past the id we're searching for
+-
+    lda.l rando_player_id_table, x
+    beq .checklastrow ; hit the final block of zeroes in table = gone past the id we're searching for
+    cmp.b $00
+    beq .correctindex
+    bpl .checklastrow ; hit a value greater than what what we're searching for = gone past the id we're searching for
+    ; advance to next row
+    txa
+    clc
+    adc #$001c
+    tax
+    cpx #(rando_player_id_table_end-rando_player_id_table)
+    bmi -
+.checklastrow
+    ; we already checked the beginning of the relevant rows, so check the 0n13 non-beginning elements of the last row
+    stx.b $02 ; end when x gets back to this index
+    txa        ; }
+    sec        ; }
+    sbc #$001a ; } X -= 0n13 word-sized array elements
+    tax        ; }
+-
+    lda.l rando_player_id_table, x
+    beq .notfound
+    cmp.b $00
+    beq .correctindex
+    inx
+    inx
+    cpx.b $02
+    bmi -
+
+.notfound
+    clc
+    plx
+    rtl
+.correctindex
+    txa
+    lsr ; byte index -> array index (divide by 2)
+    sec
+    plx
+    rtl
+
+
 i_live_pickup_multiworld: ; touch PLM code
     phx : phy : php
-    lda.l $1dc7, x              ; Load PLM room argument (item location id)
+    lda.l $1dc7, x              ; Load PLM room argument (item location id). '.l' makes this work with DB>=$c0
     asl #3 : tax                ; index by item location id into rando_item_table (entry size 8 bytes)
 
-    lda.l rando_item_table+$4, x    ; Load item owner into Y
+    lda.l config_player_id
     tay
-    lda.l rando_item_table+$2, x    ; Load original item id into A
-    cmp #$0015
-    bmi .local_item_or_offworld
-    ; off-world item:
-    lda #$0015              ; ids over 0n20 are only used to display off-world item names
-.local_item_or_offworld
-    ; params: A = item id, X = byte offset of item location's row in rando_item_table (ie, location id * 8), Y = world id aka item owner (all 16-bit)
-    jsl mw_write_message       ; Send message over network/SRAM
-    lda.l rando_item_table, x  ; Load item type
-    beq .own_item
-    ; type of item == #$0001: other player's item:
-    lda.l rando_item_table+$2, x    ; Load original item id again, we'll then put it into X this time
+    lda.l rando_item_table, x  ; Load item destination type
+    beq .send_network ; skip looking up the destination player id/world id if it's our own item
+
+    lda.l rando_item_table+$4, x    ; Load Other Player Index, convert to other player id, and transfer to Y
+    asl
+    phx
     tax
-    ; params: X = item id, Y = world id aka item owner
-    jsl mw_display_item_sent     ; Display custom message box
-    bra .end
+    lda.l rando_player_id_table, x
+    plx
+    tay
+.send_network
+    ; params: A = Item Id, X = byte offset of item location's row in rando_item_table (ie, location id * 8), Y = world id to send to (all 16-bit)
+    lda.l rando_item_table+$2, x ; load Item Id
+    jsl mw_write_message       ; Send message over network/SRAM
+
+    lda.l rando_item_table, x  ; Load item destination type
+    beq .own_item
+    cmp #$0001
+    beq .otherplayers_item
+    ; type of item == #$0002: SM item link item that sends to the current player and others
+    bra .item_link_item
 
 .own_item
     lda.l rando_item_table+$2, x ; Load item id
     cmp #$0015
     bmi .own_item1
-    lda #$0014              ; self item id >= 0n21 should never happen... but just call it a reserve tank (0n20) to avoid a crash
+    lda #$0014              ; self item id >= #$0015 should never happen... but just call it a reserve tank (#$0014) to avoid a crash
 .own_item1
     ; param X = byte offset of item data within sm_item_plm_pickup_sequence_pointers for this item
     asl
     tax
     jsl perform_item_pickup
+    bra .end
+
+.otherplayers_item
+    ; type of item == #$0001: other player's item:
+    lda.l rando_item_table+$4, x    ; Y = Other Player Index
+    tay
+    lda.l rando_item_table+$2, x    ; X = original item id aka message table index again
+    tax
+    ; params: X = item id, Y = Other Player Index
+    jsl mw_display_item_sent     ; Display custom message box
+    bra .end
+
+.item_link_item
+    ; pick up the item for ourselves now since we know it's ours, rather than incur a network delay.
+    ; show a special message box since it's a send to others at the same time.
+    lda.l rando_item_table+$4, x    ; Y = Other Player Index
+    tay
+    lda.l rando_item_table+$2, x    ; X = original item id aka message table index again
+    tax
+    cmp #$0015 ; } skip immediate pickup and message box if this isn't an SM item
+    bpl .end   ; } (this is never expected). should still receive back from network if valid
+    ; params: X = item id, Y = Other Player Index
+    jsl mw_prep_item_link_messagebox
+    ; param X = byte offset of item data within sm_item_plm_pickup_sequence_pointers for this item
+    txa
+    asl
+    tax
+    jsl perform_item_pickup ; also displays the overridden message box
+    jsl mw_cleanup_item_link_messagebox
     bra .end
 
 .end
@@ -744,8 +885,15 @@ item_received:
     dw "___          PLAYER          ___"
 item_received_end:
 
-cleartable
+item_link_distributed:
+    dw "___         YOU FOUND        ___"
+    dw "___      ITEM NAME HERE      ___"
+    dw "___     FOR YOURSELF AND     ___"
+    dw "___      ITEM LINK NAME      ___"
+; item link name is just stored as a player name, no special handling needed
+item_link_distributed_end:
 
+cleartable
 
 write_placeholders:
     phx : phy
@@ -766,37 +914,21 @@ write_placeholders:
     bne -
 
     plb ; restore previous DB
-    lda.b $c3                 ; Load player 1
-    ; this is archipelago's player id (max 65535), relative to the current multiworld, of the player involved,
-    ; which we must now translate to the local ROM-specific player id (max 201 to save space) to get their name.
-    ; search our list of player IDs for this value
-    ldx #$0000
-.loop
-    cpx #(rando_player_id_table_end-rando_player_id_table)   ; check for end of table
-    bpl .notfound
-    inx #2   
-    cmp.l rando_player_id_table-$2, x
-    bne .loop
-    dex #2
-    txa
-    bra .value_ok
-.notfound   
-    lda #$0000
-.value_ok
-    asl #3 : tax
+    lda.b $c3 ; load Other Player Index
+    asl #4 : tax
     ldy #$0000
 -
-    lda.l rando_player_table, x
+    lda.l rando_player_name_table, x
     and #$00ff
     phx
     asl : tax               ; Put char table offset in X
     lda.l char_table-$40, x 
     tyx
-    sta.l $7e3310, x        ; 16 bytes player name now instead of 12
+    sta.l $7e3310, x
     iny #2
     plx
     inx
-    cpy #$0020              ; 16 bytes player name now instead of 12
+    cpy #$0020              ; 16 char player name
     bne -
     rep #$30
 
@@ -837,6 +969,8 @@ multiworld_init_new_messagebox_if_needed:
     beq .msgbox_mwsend
     cmp #$0301
     beq .msgbox_mwrecv
+    cmp #$0302
+    beq .msgbox_mw_item_link
 .vanilla
     ; restore original code
     pla
@@ -848,8 +982,10 @@ multiworld_init_new_messagebox_if_needed:
     rts
 .msgbox_mwsend
 .msgbox_mwrecv
+.msgbox_mw_item_link
     ; simulate table entry: dw !PlaceholderBig, !Big, item_sent
     ;       or table entry: dw !PlaceholderBig, !Big, item_received
+    ;       or table entry: dw !PlaceholderBig, !Big, item_link_distributed
     jsr $825A ; vanilla large message box init routine $85:825A (no parameters)
     php
     jsr PlaceholderBig
@@ -873,6 +1009,8 @@ hook_tilemap_calc:
     beq .msgbox_mwsend
     cmp #$0301
     beq .msgbox_mwrecv
+    cmp #$0302
+    beq .msgbox_mw_item_link
 .vanilla
     ; restore original code
     pla
@@ -895,7 +1033,15 @@ hook_tilemap_calc:
     lda #(item_received_end-item_received)
     sta.b $09 ; $09 = message tilemap size
     rts
-    
+.msgbox_mw_item_link
+    pla
+    stz.b $ce
+    lda #item_link_distributed ; 16-bit pointer to receive box template
+    sta.b $00 ; $00 = message tilemap source
+    lda #(item_link_distributed_end-item_link_distributed)
+    sta.b $09 ; $09 = message tilemap size
+    rts
+
 
 ; hook the relevant locations where an item's message box index will be read from $1c1f in RAM and used
 org $858246 ; inside $85:8241 Initialise message box
