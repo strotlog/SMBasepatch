@@ -484,12 +484,6 @@ mw_handle_queue: ; receive only
     asl #2 : tax
     ; X = offset in buffer of next new message to process, bytes of which are:
     ; [source player id.lo, source player id.hi, SM item type, location id where item was found]
-    lda.l !SRAM_MW_ITEMS_RECV, x
-    jsl ap_playerid_to_rom_other_player_index
-    bcs .found
-    lda #$0000 ; should not happen. but receive from "Archipelago" player if not found
-.found
-    sta.b $c3 ; Other Player Index (in case we spawn a message box)
     lda.l !SRAM_MW_ITEMS_RECV+$2, x
     sta.b $c1
     lda.l !SRAM_MW_ITEMS_RECV, x
@@ -502,18 +496,33 @@ mw_handle_queue: ; receive only
     xba
     and #$00FF ; A = source location id
     cmp #$00FF
-    beq .perform_receive ; location FF -> branch. FF is special location code meaning "N/A", don't treat as a location
-    ; if (remote items disabled && self item location does NOT send to an item link that includes self), .perform_receive
+    beq .perform_receive ; location FF -> branch. FF is a special location code meaning "N/A", don't treat as a location
+    ; if (remote items disabled && (the message received is (self -> self, any item id, item loc 0) OR
+    ;                                                    is (self -> self, any item id, item loc containing an item
+    ;                                                                                   link to send to self),
+    ; this is the client sending an item link message back to the game that sent it (us), or from another game connected
+    ; to the same slot. since the user wants to find all the items placed in their own world and lose them on death,
+    ; we DROP this message.
+    ; (in the future this could be made to work the way it does for remote items, but currently (0.3.5) the client
+    ;  zeroes out the item loc in the message when remote items are disabled, so we can't know what item loc to collect!)
+    lda.l config_remote_items
+    bit #$0002
+    bne .collect_item_if_present
+    ; if (remote items disabled && self item location does NOT send to an item link that includes self)), .perform_receive
+    lda.b $c1
+    xba
+    and #$00FF ; A = source location id
+    beq .next ; drop
     phx
     asl #3
     tax
     lda.l rando_item_table, x ; load Item Destination Type for the source location of the item we're receiving
     plx
     cmp #$0002
-    beq .collect_item_if_present
-    lda.l config_remote_items
-    bit #$0002
-    beq .perform_receive
+    beq .next ; drop
+    ; some other self -> self message with remote items disabled. this shouldn't happen as the server should filter it
+    ; out. traditional handling is to accept the item but we could probably do anything
+    bra .perform_receive
 
 .collect_item_if_present
     lda.b $c1
@@ -546,9 +555,15 @@ mw_handle_queue: ; receive only
     ; now show message box
 
 .perform_receive
+    lda.l !SRAM_MW_ITEMS_RECV, x
+    jsl ap_playerid_to_rom_other_player_index
+    bcs .found
+    lda #$0000 ; should not happen. but receive from "Archipelago" player if not found
+.found
+    sta.b $c3 ; write Other Player Index for message box
     lda.b $c1
     and #$00FF
-    sta.b $c1
+    sta.b $c1 ; write item id for message box
     jsr mw_receive_item
 
 .next
