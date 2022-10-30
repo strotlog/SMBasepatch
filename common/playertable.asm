@@ -1,10 +1,10 @@
 ; Player table for multiworld
-; 16-bytes per player
-; (12-byte name, 4 bytes of data if needed)
 ; all 16 bytes are now used for Player name
 
-; max 201 players (#0 = archipelago; 100 whom we send items to; 100 whom we receive items from)
-rando_player_table:
+; max 202 players (1 for "Archipelago" (server/!give); 100 whom we send items to; 100 whom we receive items from;
+;                  1 for self so that we can always assume it's there)
+; indexed by Other Player Id listed in rando_item_table
+rando_player_name_table:
     db "  PLAYER 1  " : dw $0000, $0000
     db "  PLAYER 2  " : dw $0000, $0000
     db "  PLAYER 3  " : dw $0000, $0000
@@ -206,8 +206,15 @@ rando_player_table:
     db "123456789012" : dw $0000, $0000
     db "123456789012" : dw $0000, $0000
     db "123456789012" : dw $0000, $0000
+    db "123456789012" : dw $0000, $0000
 
-; Player id table for multiworld mapping with rando_player_table, 2 bytes per player (each line is 8 players)
+; Archipelago Player ID table (aka world id)
+; indexed by Other Player Index listed in rando_item_table
+; 2 bytes per player (each line is 8 players)
+; Is sorted, and is sometimes searched through to derive Other Player Index from an Archipelago Player ID
+; Table may end in zeroes: Undefined entry, or player id overflowed but has a valid name.
+;                          No need to search for late player id 0 -> player index, though; in that case we'll just show
+;                          'Archipelago' as that's index 0 and a sort of made-up player id 0)
 rando_player_id_table:
     dw $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000
     dw $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000
@@ -234,5 +241,6 @@ rando_player_id_table:
     dw $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000
     dw $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000
     dw $0000, $0000, $0000, $0000, $0000, $0000, $0000, $0000
-    dw $0000
+    dw $0000, $0000
 rando_player_id_table_end:
+dw $0000 ; permanent 0 terminator to simplify searching. not a table entry

@@ -233,7 +233,9 @@ i_start_draw_loop:
     cmp #$0015
     bmi .all_items
     ; offworld item:
-    lda #$0015              ; item ids over 20 (#$0015 and up) are used to display off-world item names, but the graphics are always either item gfx #$0015 or #$0016
+    ; item ids #$0015 and up are used to display off-world item names, but the graphics are always either
+    ; item gfx #$0015 or #$0016 (0n21 or 0n22) based only on whether the item is progression/advancement
+    lda #$0015
     clc
     adc.l rando_item_table+$6, x      ; add one if off-world item isnt progression
 
