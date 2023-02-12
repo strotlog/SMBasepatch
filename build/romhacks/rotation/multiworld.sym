@@ -176,7 +176,7 @@ E2:80F4 write_repeated_memory_loop
 0001 06780555 ../../common/nofanfare.asm
 0002 ae952bc9 ../../common/multiworld.asm
 0003 f7e9db95 ../../common/itemextras.asm
-0004 cc2c77e4 ../../common/items.asm
+0004 b0dd378a ../../common/items.asm
 0005 dbfcb38d ../../common/startitem.asm
 
 [rom checksum]
