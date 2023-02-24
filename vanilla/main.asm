@@ -53,7 +53,8 @@ org $b88800
 incsrc ../common/itemextras.asm
 
 ; had to move this from original place ($84efe0) since it conflicts with VariaRandomizer's beam_doors_plms patch
-org $84f870
+; then conflicted with ($84f900) with VariaRandomizer's door_indicators_plms
+org $84fc20
 incsrc ../common/items.asm
 
 org $b8cf00

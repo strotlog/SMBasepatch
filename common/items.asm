@@ -33,11 +33,11 @@
 ; Add custom PLM that can asynchronously load in items
 ; ALL items in archipelago sm will use one of these 3 PLMs:
 archipelago_visible_item_plm:
-    dw i_visible_item_setup, v_item       ;f870 if we're org'ed at $84f870
+    dw i_visible_item_setup, v_item       ;fc20 if we're org'ed at $84fc20
 archipelago_chozo_item_plm:
-    dw i_visible_item_setup, c_item       ;f874 if we're org'ed at $84f870
+    dw i_visible_item_setup, c_item       ;fc24 if we're org'ed at $84fc20
 archipelago_hidden_item_plm:
-    dw i_hidden_item_setup,  h_item       ;f878 if we're org'ed at $84f870
+    dw i_hidden_item_setup,  h_item       ;fc28 if we're org'ed at $84fc20
 
 
 ; new PLM graphics (only 2)
